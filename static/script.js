@@ -653,19 +653,46 @@ async function saveTask(event) {
         await loadTasks();
     } catch (error) {
         console.error('Error saving task:', error);
-        alert('Error saving task');
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to save task',
+            confirmButtonColor: '#6366f1'
+        });
     }
 }
 
 async function deleteTask(taskId) {
-    if (!confirm('Are you sure you want to delete this task?')) return;
+    const result = await Swal.fire({
+        title: 'Are you sure?',
+        text: "You won't be able to revert this!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Yes, delete it!'
+    });
+    
+    if (!result.isConfirmed) return;
     
     try {
         await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
         await loadTasks();
+        Swal.fire({
+            icon: 'success',
+            title: 'Deleted!',
+            text: 'Task has been deleted.',
+            confirmButtonColor: '#6366f1',
+            timer: 2000
+        });
     } catch (error) {
         console.error('Error deleting task:', error);
-        alert('Error deleting task');
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to delete task',
+            confirmButtonColor: '#6366f1'
+        });
     }
 }
 
@@ -712,7 +739,12 @@ async function startTimer(taskId) {
         renderTodoList();
     } catch (error) {
         console.error('Error starting timer:', error);
-        alert('Error starting timer');
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to start timer',
+            confirmButtonColor: '#6366f1'
+        });
     }
 }
 
@@ -729,7 +761,12 @@ async function stopTimer(taskId, shouldReload = true) {
     } catch (error) {
         console.error('Error stopping timer:', error);
         if (shouldReload) {
-            alert('Error stopping timer');
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Failed to stop timer',
+                confirmButtonColor: '#6366f1'
+            });
         }
     }
 }
