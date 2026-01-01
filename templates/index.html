@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Tracker</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <nav class="navigation">
+            <h1>📋 Task Tracker</h1>
+            <div class="nav-buttons">
+                <button onclick="showView('dashboard')" class="nav-btn">Dashboard</button>
+                <button onclick="showView('todo')" class="nav-btn active">Todo List</button>
+                <button onclick="showView('kanban')" class="nav-btn">Kanban</button>
+            </div>
+        </nav>
+
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view" style="display: none;">
+            <h2>📊 Dashboard</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-todo">0</div>
+                    <div class="stat-label">Todo</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-in-progress">0</div>
+                    <div class="stat-label">In Progress</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-done">0</div>
+                    <div class="stat-label">Done</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-completed-today">0</div>
+                    <div class="stat-label">Completed Today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-time">0h 0m</div>
+                    <div class="stat-label">Total Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-avg-time">0h 0m</div>
+                    <div class="stat-label">Avg Time/Task</div>
+                </div>
+            </div>
+            
+            <div class="charts-container">
+                <div class="chart-card">
+                    <h3>📈 Tasks Created - Last 7 Days</h3>
+                    <canvas id="tasks-created-chart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>✅ Tasks Completed - Last 7 Days</h3>
+                    <canvas id="tasks-completed-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Todo List View -->
+        <div id="todo-view" class="view">
+            <div class="section-header">
+                <h2>✅ Todo List</h2>
+                <button onclick="openAddTaskModal()" class="btn-primary">+ Add Task</button>
+            </div>
+            
+            <!-- Filters -->
+            <div class="filters-container">
+                <div class="filter-group">
+                    <label>🔍 Filter by Project</label>
+                    <select id="filter-project" onchange="applyFilters()">
+                        <option value="">All Projects</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>🎯 Filter by Priority</label>
+                    <select id="filter-priority" onchange="applyFilters()">
+                        <option value="">All Priorities</option>
+                        <option value="high">🔴 High</option>
+                        <option value="medium">🟡 Medium</option>
+                        <option value="low">🟢 Low</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>📅 Filter by Status</label>
+                    <select id="filter-status" onchange="applyFilters()">
+                        <option value="">All Status</option>
+                        <option value="todo">Todo</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <button onclick="clearFilters()" class="btn-clear-filter">Clear Filters</button>
+                </div>
+            </div>
+            
+            <div id="todo-list" class="task-list"></div>
+        </div>
+
+        <!-- Kanban View -->
+        <div id="kanban-view" class="view" style="display: none;">
+            <h2>📌 Kanban Board</h2>
+            <div class="kanban-board">
+                <div class="kanban-column">
+                    <h3>📝 Todo</h3>
+                    <div id="kanban-todo" class="kanban-tasks" data-status="todo"></div>
+                </div>
+                <div class="kanban-column">
+                    <h3>⚙️ In Progress</h3>
+                    <div id="kanban-in-progress" class="kanban-tasks" data-status="in-progress"></div>
+                </div>
+                <div class="kanban-column">
+                    <h3>✔️ Done</h3>
+                    <div id="kanban-done" class="kanban-tasks" data-status="done"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Task Modal -->
+        <div id="task-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-title">Add New Task</h3>
+                    <span class="close" onclick="closeModal()">&times;</span>
+                </div>
+                <form id="task-form" onsubmit="saveTask(event)">
+                    <input type="hidden" id="task-id">
+                    
+                    <div class="form-section">
+                        <div class="form-group-full">
+                            <label>Task Title *</label>
+                            <input type="text" id="task-title" required placeholder="Enter task title">
+                        </div>
+                        
+                        <div class="form-group-full">
+                            <label>Description</label>
+                            <textarea id="task-description" rows="3" placeholder="Add task description (optional)"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>📅 Due Date</label>
+                                <input type="date" id="task-due-date">
+                            </div>
+                            <div class="form-group">
+                                <label>📁 Project</label>
+                                <input type="text" id="task-project" placeholder="Project name">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>🎯 Priority</label>
+                                <select id="task-priority">
+                                    <option value="low">🟢 Low</option>
+                                    <option value="medium" selected>🟡 Medium</option>
+                                    <option value="high">🔴 High</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>📊 Status</label>
+                                <select id="task-status">
+                                    <option value="todo">📝 Todo</option>
+                                    <option value="in-progress">⚙️ In Progress</option>
+                                    <option value="done">✅ Done</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-actions">
+                        <button type="button" onclick="closeModal()" class="btn-secondary">Cancel</button>
+                        <button type="submit" class="btn-primary">Save Task</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
