@@ -58,16 +58,36 @@ def get_tasks():
     conn.close()
     return jsonify(tasks)
 
+@app.route('/api/projects', methods=['GET'])
+def get_projects():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT project FROM tasks WHERE project IS NOT NULL AND project != "" ORDER BY project')
+    projects = [row['project'] for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(projects)
+
 @app.route('/api/tasks', methods=['POST'])
 def create_task():
     data = request.json
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        'INSERT INTO tasks (title, description, status, priority, project, due_date) VALUES (?, ?, ?, ?, ?, ?)',
-        (data['title'], data.get('description', ''), data.get('status', 'todo'),
-         data.get('priority', 'medium'), data.get('project', ''), data.get('due_date'))
-    )
+
+    created_at = data.get('created_at') if data.get('created_at') else None
+
+    if created_at:
+        cursor.execute(
+            'INSERT INTO tasks (title, description, status, priority, project, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (data['title'], data.get('description', ''), data.get('status', 'todo'),
+             data.get('priority', 'medium'), data.get('project', ''), data.get('due_date'), created_at)
+        )
+    else:
+        cursor.execute(
+            'INSERT INTO tasks (title, description, status, priority, project, due_date) VALUES (?, ?, ?, ?, ?, ?)',
+            (data['title'], data.get('description', ''), data.get('status', 'todo'),
+             data.get('priority', 'medium'), data.get('project', ''), data.get('due_date'))
+        )
+
     conn.commit()
     task_id = cursor.lastrowid
     conn.close()
@@ -79,11 +99,12 @@ def update_task(task_id):
     conn = get_db()
     cursor = conn.cursor()
 
-    # Update task
+    # Update task including created_at
     cursor.execute(
-        'UPDATE tasks SET title=?, description=?, status=?, priority=?, project=?, due_date=? WHERE id=?',
+        'UPDATE tasks SET title=?, description=?, status=?, priority=?, project=?, due_date=?, created_at=? WHERE id=?',
         (data['title'], data.get('description', ''), data['status'],
-         data.get('priority', 'medium'), data.get('project', ''), data.get('due_date'), task_id)
+         data.get('priority', 'medium'), data.get('project', ''), data.get('due_date'),
+         data.get('created_at'), task_id)
     )
 
     # Update timestamps based on status change
@@ -110,6 +131,36 @@ def delete_task(task_id):
 def start_timer(task_id):
     conn = get_db()
     cursor = conn.cursor()
+
+    # Stop all other active timers first
+    cursor.execute(
+        'SELECT DISTINCT task_id FROM time_logs WHERE end_time IS NULL'
+    )
+    active_tasks = cursor.fetchall()
+
+    for task in active_tasks:
+        other_task_id = task['task_id']
+        if other_task_id != task_id:
+            # Stop the timer
+            cursor.execute(
+                'SELECT id, start_time FROM time_logs WHERE task_id=? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1',
+                (other_task_id,)
+            )
+            log = cursor.fetchone()
+
+            if log:
+                cursor.execute(
+                    'UPDATE time_logs SET end_time=CURRENT_TIMESTAMP, duration=(strftime("%s", CURRENT_TIMESTAMP) - strftime("%s", start_time)) WHERE id=?',
+                    (log['id'],)
+                )
+
+                # Update total time spent on that task
+                cursor.execute(
+                    'UPDATE tasks SET time_spent = (SELECT COALESCE(SUM(duration), 0) FROM time_logs WHERE task_id=?) WHERE id=?',
+                    (other_task_id, other_task_id)
+                )
+
+    # Start new timer
     cursor.execute(
         'INSERT INTO time_logs (task_id, start_time) VALUES (?, CURRENT_TIMESTAMP)',
         (task_id,)

@@ -18,6 +18,49 @@
             </div>
         </nav>
 
+        <!-- Global Filters -->
+        <div class="filters-container">
+            <div class="filter-group">
+                <label>🔍 Search by Title</label>
+                <input type="text" id="filter-search" placeholder="Search tasks..." onkeyup="applyFilters()">
+            </div>
+            <div class="filter-group">
+                <label>📁 Filter by Project</label>
+                <select id="filter-project" onchange="applyFilters()">
+                    <option value="">All Projects</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>🎯 Filter by Priority</label>
+                <select id="filter-priority" onchange="applyFilters()">
+                    <option value="">All Priorities</option>
+                    <option value="high">🔴 High</option>
+                    <option value="medium">🟡 Medium</option>
+                    <option value="low">🟢 Low</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>📊 Filter by Status</label>
+                <select id="filter-status" onchange="applyFilters()">
+                    <option value="">All Status</option>
+                    <option value="todo">Todo</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="done">Done</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>📅 Date From</label>
+                <input type="date" id="filter-date-from" onchange="applyFilters()">
+            </div>
+            <div class="filter-group">
+                <label>📅 Date To</label>
+                <input type="date" id="filter-date-to" onchange="applyFilters()">
+            </div>
+            <div class="filter-group filter-actions">
+                <button onclick="clearFilters()" class="btn-clear-filter">Clear All Filters</button>
+            </div>
+        </div>
+
         <!-- Dashboard View -->
         <div id="dashboard-view" class="view" style="display: none;">
             <h2>📊 Dashboard</h2>
@@ -66,38 +109,6 @@
                 <h2>✅ Todo List</h2>
                 <button onclick="openAddTaskModal()" class="btn-primary">+ Add Task</button>
             </div>
-            
-            <!-- Filters -->
-            <div class="filters-container">
-                <div class="filter-group">
-                    <label>🔍 Filter by Project</label>
-                    <select id="filter-project" onchange="applyFilters()">
-                        <option value="">All Projects</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>🎯 Filter by Priority</label>
-                    <select id="filter-priority" onchange="applyFilters()">
-                        <option value="">All Priorities</option>
-                        <option value="high">🔴 High</option>
-                        <option value="medium">🟡 Medium</option>
-                        <option value="low">🟢 Low</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>📅 Filter by Status</label>
-                    <select id="filter-status" onchange="applyFilters()">
-                        <option value="">All Status</option>
-                        <option value="todo">Todo</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="done">Done</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <button onclick="clearFilters()" class="btn-clear-filter">Clear Filters</button>
-                </div>
-            </div>
-            
             <div id="todo-list" class="task-list"></div>
         </div>
 
@@ -145,16 +156,21 @@
                     <div class="form-section">
                         <div class="form-row-2">
                             <div class="form-group">
-                                <label>📅 Due Date</label>
-                                <input type="date" id="task-due-date">
+                                <label>📅 Created Date</label>
+                                <input type="date" id="task-created-date">
                             </div>
                             <div class="form-group">
-                                <label>📁 Project</label>
-                                <input type="text" id="task-project" placeholder="Project name">
+                                <label>📅 Due Date</label>
+                                <input type="date" id="task-due-date">
                             </div>
                         </div>
                         
                         <div class="form-row-2">
+                            <div class="form-group">
+                                <label>📁 Project</label>
+                                <input type="text" id="task-project" list="project-list" placeholder="Select or type project name">
+                                <datalist id="project-list"></datalist>
+                            </div>
                             <div class="form-group">
                                 <label>🎯 Priority</label>
                                 <select id="task-priority">
@@ -163,6 +179,9 @@
                                     <option value="high">🔴 High</option>
                                 </select>
                             </div>
+                        </div>
+                        
+                        <div class="form-row-2">
                             <div class="form-group">
                                 <label>📊 Status</label>
                                 <select id="task-status">
@@ -171,6 +190,7 @@
                                     <option value="done">✅ Done</option>
                                 </select>
                             </div>
+                            <div class="form-group"></div>
                         </div>
                     </div>
                     
