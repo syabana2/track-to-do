@@ -218,6 +218,8 @@ function renderKanban() {
             'high': '🔴'
         };
         
+        const isTimerActive = activeTimers[task.id];
+        
         card.innerHTML = `
             <div class="kanban-card-title">${task.title}</div>
             <div class="kanban-card-meta">
@@ -232,6 +234,12 @@ function renderKanban() {
                 </div>
             </div>
             <div class="kanban-card-time">⏱️ ${formatTime(task.time_spent)}</div>
+            <div class="kanban-timer-controls">
+                ${!isTimerActive ? 
+                    `<button class="kanban-timer-btn kanban-timer-start" onclick="event.stopPropagation(); startTimer(${task.id})">▶️ Start</button>` :
+                    `<button class="kanban-timer-btn kanban-timer-stop" onclick="event.stopPropagation(); stopTimer(${task.id})">⏹️ Stop</button>`
+                }
+            </div>
         `;
         
         card.addEventListener('dragstart', handleDragStart);
@@ -737,6 +745,7 @@ async function startTimer(taskId) {
             updateTaskTimer(taskId);
         }, 1000); // Update every second
         renderTodoList();
+        renderKanban();
     } catch (error) {
         console.error('Error starting timer:', error);
         Swal.fire({
@@ -784,6 +793,10 @@ function updateTaskTimer(taskId) {
         const timeDisplay = el.querySelector('.task-time-display');
         if (timeDisplay) {
             timeDisplay.textContent = formatTime(task.time_spent);
+        }
+        const kanbanTimeDisplay = el.querySelector('.kanban-card-time');
+        if (kanbanTimeDisplay) {
+            kanbanTimeDisplay.textContent = `⏱️ ${formatTime(task.time_spent)}`;
         }
     });
 }
