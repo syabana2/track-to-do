@@ -42,6 +42,18 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS server_credentials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            project TEXT,
+            ip TEXT NOT NULL,
+            password TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -259,6 +271,55 @@ def get_dashboard_stats():
         'daily_completion': [dict(row) for row in daily_completion],
         'daily_created': [dict(row) for row in daily_created]
     })
+
+@app.route('/api/credentials', methods=['GET'])
+def get_credentials():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM server_credentials ORDER BY created_at DESC')
+    credentials = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(credentials)
+
+@app.route('/api/credentials', methods=['POST'])
+def create_credential():
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'INSERT INTO server_credentials (title, project, ip, password) VALUES (?, ?, ?, ?)',
+        (data['title'], data.get('project', ''), data['ip'], data['password'])
+    )
+
+    conn.commit()
+    credential_id = cursor.lastrowid
+    conn.close()
+    return jsonify({'id': credential_id, 'message': 'Credential created'}), 201
+
+@app.route('/api/credentials/<int:credential_id>', methods=['PUT'])
+def update_credential(credential_id):
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'UPDATE server_credentials SET title=?, project=?, ip=?, password=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        (data['title'], data.get('project', ''), data['ip'], data['password'], credential_id)
+    )
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Credential updated'})
+
+@app.route('/api/credentials/<int:credential_id>', methods=['DELETE'])
+def delete_credential(credential_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM server_credentials WHERE id=?', (credential_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Credential deleted'})
 
 if __name__ == '__main__':
     init_db()

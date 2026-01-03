@@ -2,6 +2,7 @@ let tasks = [];
 let activeTimers = {};
 let tasksCreatedChart = null;
 let tasksCompletedChart = null;
+let credentials = [];
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
@@ -13,16 +14,18 @@ document.addEventListener('DOMContentLoaded', () => {
 function showView(viewName) {
     document.querySelectorAll('.view').forEach(view => view.style.display = 'none');
     document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-    
+
     document.getElementById(`${viewName}-view`).style.display = 'block';
     event.target.classList.add('active');
-    
+
     if (viewName === 'dashboard') {
         loadDashboard();
     } else if (viewName === 'kanban') {
         renderKanban();
     } else if (viewName === 'todo') {
         renderTodoList();
+    } else if (viewName === 'credentials') {
+        loadCredentials();
     }
 }
 
@@ -45,7 +48,7 @@ async function loadProjects() {
     try {
         const response = await fetch('/api/projects');
         const projects = await response.json();
-        
+
         const datalist = document.getElementById('project-list');
         if (datalist) {
             datalist.innerHTML = '';
@@ -64,18 +67,18 @@ async function loadProjects() {
 function renderTodoList() {
     const todoList = document.getElementById('todo-list');
     todoList.innerHTML = '';
-    
+
     // Apply filters
     let filteredTasks = getFilteredTasks();
-    
+
     if (filteredTasks.length === 0) {
         todoList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">No tasks found.</p>';
         return;
     }
-    
+
     // Group tasks by date
     const groupedTasks = groupTasksByDate(filteredTasks);
-    
+
     // Render each date group
     Object.keys(groupedTasks).sort((a, b) => {
         if (a === 'No Due Date') return 1;
@@ -90,12 +93,12 @@ function renderTodoList() {
     }).forEach(dateKey => {
         const dateGroup = document.createElement('div');
         dateGroup.className = 'date-group';
-        
+
         const dateHeader = document.createElement('div');
         dateHeader.className = 'date-header';
         dateHeader.textContent = `${dateKey} (${groupedTasks[dateKey].length})`;
         dateGroup.appendChild(dateHeader);
-        
+
         // Sort tasks by priority within each date group (high -> medium -> low)
         const priorityOrder = { 'high': 1, 'medium': 2, 'low': 3 };
         groupedTasks[dateKey].sort((a, b) => {
@@ -104,28 +107,28 @@ function renderTodoList() {
             const taskEl = createTaskElement(task);
             dateGroup.appendChild(taskEl);
         });
-        
+
         todoList.appendChild(dateGroup);
     });
 }
 
 function groupTasksByDate(tasks) {
     const groups = {};
-    
+
     tasks.forEach(task => {
         let dateKey = 'No Date';
-        
+
         if (task.created_at) {
             const createdDate = new Date(task.created_at);
             const today = new Date();
             const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
-            
+
             // Reset time to compare only dates
             today.setHours(0, 0, 0, 0);
             yesterday.setHours(0, 0, 0, 0);
             createdDate.setHours(0, 0, 0, 0);
-            
+
             if (createdDate.getTime() === today.getTime()) {
                 dateKey = '📅 Created Today';
             } else if (createdDate.getTime() === yesterday.getTime()) {
@@ -134,13 +137,13 @@ function groupTasksByDate(tasks) {
                 dateKey = '📅 Created on ' + formatDate(task.created_at);
             }
         }
-        
+
         if (!groups[dateKey]) {
             groups[dateKey] = [];
         }
         groups[dateKey].push(task);
     });
-    
+
     return groups;
 }
 
@@ -149,18 +152,18 @@ function createTaskElement(task) {
     const isOverdue = checkIfOverdue(task);
     taskEl.className = `task-item status-${task.status} priority-${task.priority || 'medium'}${isOverdue ? ' overdue' : ''}`;
     taskEl.dataset.taskId = task.id;
-    
+
     const timeSpent = formatTime(task.time_spent);
     const isTimerActive = activeTimers[task.id];
-    
+
     const priorityEmoji = {
         'low': '🟢',
         'medium': '🟡',
         'high': '🔴'
     };
-    
+
     const overdueBadge = isOverdue ? '<span class="overdue-badge">⚠️ Overdue</span>' : '';
-    
+
     taskEl.innerHTML = `
         ${overdueBadge}
         <div class="task-header">
@@ -182,13 +185,13 @@ function createTaskElement(task) {
             ${task.due_date ? `<span class="task-date-item" ${isOverdue ? 'style="color: var(--danger); font-weight: 600;"' : ''}>⏰ Due: ${formatDateShort(task.due_date)}</span>` : ''}
         </div>
         <div class="timer-controls">
-            ${!isTimerActive ? 
+            ${!isTimerActive ?
                 `<button class="timer-btn timer-start" onclick="startTimer(${task.id})">▶️ Start Timer</button>` :
                 `<button class="timer-btn timer-stop" onclick="stopTimer(${task.id})">⏹️ Stop Timer</button>`
             }
         </div>
     `;
-    
+
     return taskEl;
 }
 
@@ -199,27 +202,27 @@ function renderKanban() {
         'in-progress': document.getElementById('kanban-in-progress'),
         'done': document.getElementById('kanban-done')
     };
-    
+
     Object.values(columns).forEach(col => col.innerHTML = '');
-    
+
     // Apply filters
     const filteredTasks = getFilteredTasks();
-    
+
     filteredTasks.forEach(task => {
         const card = document.createElement('div');
         const isOverdue = checkIfOverdue(task);
         card.className = `kanban-card priority-${task.priority || 'medium'}${isOverdue ? ' overdue' : ''}`;
         card.draggable = true;
         card.dataset.taskId = task.id;
-        
+
         const priorityEmoji = {
             'low': '🟢',
             'medium': '🟡',
             'high': '🔴'
         };
-        
+
         const isTimerActive = activeTimers[task.id];
-        
+
         card.innerHTML = `
             <div class="kanban-card-title">${task.title}</div>
             <div class="kanban-card-meta">
@@ -235,19 +238,19 @@ function renderKanban() {
             </div>
             <div class="kanban-card-time">⏱️ ${formatTime(task.time_spent)}</div>
             <div class="kanban-timer-controls">
-                ${!isTimerActive ? 
+                ${!isTimerActive ?
                     `<button class="kanban-timer-btn kanban-timer-start" onclick="event.stopPropagation(); startTimer(${task.id})">▶️ Start</button>` :
                     `<button class="kanban-timer-btn kanban-timer-stop" onclick="event.stopPropagation(); stopTimer(${task.id})">⏹️ Stop</button>`
                 }
             </div>
         `;
-        
+
         card.addEventListener('dragstart', handleDragStart);
         card.addEventListener('click', () => editTask(task.id));
-        
+
         columns[task.status].appendChild(card);
     });
-    
+
     // Setup drop zones
     Object.entries(columns).forEach(([status, column]) => {
         column.addEventListener('dragover', handleDragOver);
@@ -271,18 +274,18 @@ function handleDragOver(e) {
 async function handleDrop(e, newStatus) {
     e.stopPropagation();
     e.preventDefault();
-    
+
     if (!draggedTaskId) return;
-    
+
     const task = tasks.find(t => t.id == draggedTaskId);
     if (task && task.status !== newStatus) {
         task.status = newStatus;
         await updateTaskStatus(task.id, newStatus);
     }
-    
+
     document.querySelector(`[data-task-id="${draggedTaskId}"]`).style.opacity = '1';
     draggedTaskId = null;
-    
+
     return false;
 }
 
@@ -291,7 +294,7 @@ async function loadDashboard() {
     try {
         const response = await fetch('/api/dashboard/stats');
         const stats = await response.json();
-        
+
         // Apply filters to stats
         const filteredTasks = getFilteredTasks();
         const filteredStatusCounts = {
@@ -299,29 +302,29 @@ async function loadDashboard() {
             'in-progress': filteredTasks.filter(t => t.status === 'in-progress').length,
             'done': filteredTasks.filter(t => t.status === 'done').length
         };
-        
+
         const filteredTotalTime = filteredTasks.reduce((sum, t) => sum + (t.time_spent || 0), 0);
         const tasksWithTime = filteredTasks.filter(t => t.time_spent > 0);
-        const filteredAvgTime = tasksWithTime.length > 0 
-            ? tasksWithTime.reduce((sum, t) => sum + t.time_spent, 0) / tasksWithTime.length 
+        const filteredAvgTime = tasksWithTime.length > 0
+            ? tasksWithTime.reduce((sum, t) => sum + t.time_spent, 0) / tasksWithTime.length
             : 0;
-        
+
         const today = new Date().toISOString().split('T')[0];
-        const filteredCompletedToday = filteredTasks.filter(t => 
+        const filteredCompletedToday = filteredTasks.filter(t =>
             t.completed_at && t.completed_at.startsWith(today)
         ).length;
-        
+
         document.getElementById('stat-todo').textContent = filteredStatusCounts.todo;
         document.getElementById('stat-in-progress').textContent = filteredStatusCounts['in-progress'];
         document.getElementById('stat-done').textContent = filteredStatusCounts.done;
         document.getElementById('stat-completed-today').textContent = filteredCompletedToday;
         document.getElementById('stat-total-time').textContent = formatTime(filteredTotalTime);
         document.getElementById('stat-avg-time').textContent = formatTime(Math.round(filteredAvgTime));
-        
+
         // Render charts with filtered data
         const filteredDailyCreated = filterDailyData(stats.daily_created, filteredTasks);
         const filteredDailyCompletion = filterDailyData(stats.daily_completion, filteredTasks);
-        
+
         renderTasksCreatedChart(filteredDailyCreated);
         renderTasksCompletedChart(filteredDailyCompletion);
     } catch (error) {
@@ -333,35 +336,35 @@ async function loadDashboard() {
 function renderTasksCreatedChart(dailyData) {
     const ctx = document.getElementById('tasks-created-chart');
     if (!ctx) return;
-    
+
     // Destroy existing chart
     if (tasksCreatedChart) {
         tasksCreatedChart.destroy();
     }
-    
+
     // Prepare data for last 7 days
     const last7Days = getLast7Days();
     const priorities = ['high', 'medium', 'low'];
     const datasets = [];
-    
+
     const colors = {
         'high': 'rgba(239, 68, 68, 1)',
         'medium': 'rgba(245, 158, 11, 1)',
         'low': 'rgba(16, 185, 129, 1)'
     };
-    
+
     const bgColors = {
         'high': 'rgba(239, 68, 68, 0.1)',
         'medium': 'rgba(245, 158, 11, 0.1)',
         'low': 'rgba(16, 185, 129, 0.1)'
     };
-    
+
     priorities.forEach(priority => {
         const data = last7Days.map(date => {
             const found = dailyData.find(d => d.date === date && d.priority === priority);
             return found ? found.count : 0;
         });
-        
+
         datasets.push({
             label: priority.charAt(0).toUpperCase() + priority.slice(1) + ' Priority',
             data: data,
@@ -373,7 +376,7 @@ function renderTasksCreatedChart(dailyData) {
             pointHoverRadius: 6
         });
     });
-    
+
     tasksCreatedChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -433,35 +436,35 @@ function renderTasksCreatedChart(dailyData) {
 function renderTasksCompletedChart(dailyData) {
     const ctx = document.getElementById('tasks-completed-chart');
     if (!ctx) return;
-    
+
     // Destroy existing chart
     if (tasksCompletedChart) {
         tasksCompletedChart.destroy();
     }
-    
+
     // Prepare data for last 7 days
     const last7Days = getLast7Days();
     const priorities = ['high', 'medium', 'low'];
     const datasets = [];
-    
+
     const colors = {
         'high': 'rgba(239, 68, 68, 1)',
         'medium': 'rgba(245, 158, 11, 1)',
         'low': 'rgba(16, 185, 129, 1)'
     };
-    
+
     const bgColors = {
         'high': 'rgba(239, 68, 68, 0.1)',
         'medium': 'rgba(245, 158, 11, 0.1)',
         'low': 'rgba(16, 185, 129, 0.1)'
     };
-    
+
     priorities.forEach(priority => {
         const data = last7Days.map(date => {
             const found = dailyData.find(d => d.date === date && d.priority === priority);
             return found ? found.count : 0;
         });
-        
+
         datasets.push({
             label: priority.charAt(0).toUpperCase() + priority.slice(1) + ' Priority',
             data: data,
@@ -473,7 +476,7 @@ function renderTasksCompletedChart(dailyData) {
             pointHoverRadius: 6
         });
     });
-    
+
     tasksCompletedChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -536,11 +539,11 @@ function filterDailyData(dailyData, filteredTasks) {
     const projectFilter = document.getElementById('filter-project')?.value || '';
     const priorityFilter = document.getElementById('filter-priority')?.value || '';
     const statusFilter = document.getElementById('filter-status')?.value || '';
-    
+
     if (!projectFilter && !priorityFilter && !statusFilter) {
         return dailyData;
     }
-    
+
     return dailyData.filter(item => {
         if (priorityFilter && item.priority !== priorityFilter) return false;
         return true;
@@ -564,12 +567,12 @@ function formatChartDate(dateString) {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     // Reset time for comparison
     today.setHours(0, 0, 0, 0);
     yesterday.setHours(0, 0, 0, 0);
     date.setHours(0, 0, 0, 0);
-    
+
     if (date.getTime() === today.getTime()) {
         return 'Today';
     } else if (date.getTime() === yesterday.getTime()) {
@@ -585,22 +588,22 @@ function openAddTaskModal() {
     document.getElementById('modal-title').textContent = 'Add New Task';
     document.getElementById('task-form').reset();
     document.getElementById('task-id').value = '';
-    
+
     // Set default dates
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('task-created-date').value = today;
     document.getElementById('task-due-date').value = today;
-    
+
     document.getElementById('task-modal').style.display = 'block';
 }
 
 function editTask(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    
+
     // Reset form first to clear any previous data
     document.getElementById('task-form').reset();
-    
+
     document.getElementById('modal-title').textContent = 'Edit Task';
     document.getElementById('task-id').value = task.id;
     document.getElementById('task-title').value = task.title;
@@ -622,7 +625,7 @@ function closeModal() {
 // Task CRUD operations
 async function saveTask(event) {
     event.preventDefault();
-    
+
     const taskId = document.getElementById('task-id').value;
     const title = document.getElementById('task-title').value;
     const description = document.getElementById('task-description').value;
@@ -631,17 +634,17 @@ async function saveTask(event) {
     const project = document.getElementById('task-project').value;
     const createdDate = document.getElementById('task-created-date').value;
     const dueDate = document.getElementById('task-due-date').value;
-    
-    const taskData = { 
-        title, 
-        description, 
-        status, 
-        priority, 
+
+    const taskData = {
+        title,
+        description,
+        status,
+        priority,
         project,
         created_at: createdDate || null,
         due_date: dueDate || null
     };
-    
+
     try {
         if (taskId) {
             await fetch(`/api/tasks/${taskId}`, {
@@ -656,7 +659,7 @@ async function saveTask(event) {
                 body: JSON.stringify(taskData)
             });
         }
-        
+
         closeModal();
         await loadTasks();
     } catch (error) {
@@ -680,9 +683,9 @@ async function deleteTask(taskId) {
         cancelButtonColor: '#6b7280',
         confirmButtonText: 'Yes, delete it!'
     });
-    
+
     if (!result.isConfirmed) return;
-    
+
     try {
         await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
         await loadTasks();
@@ -707,7 +710,7 @@ async function deleteTask(taskId) {
 async function updateTaskStatus(taskId, newStatus) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    
+
     try {
         await fetch(`/api/tasks/${taskId}`, {
             method: 'PUT',
@@ -738,7 +741,7 @@ async function startTimer(taskId) {
                 await stopTimer(parseInt(runningTaskId), false);
             }
         }
-        
+
         // Start new timer
         await fetch(`/api/tasks/${taskId}/start-timer`, { method: 'POST' });
         activeTimers[taskId] = setInterval(() => {
@@ -783,10 +786,10 @@ async function stopTimer(taskId, shouldReload = true) {
 function updateTaskTimer(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    
+
     // Increment time spent
     task.time_spent = (task.time_spent || 0) + 1;
-    
+
     // Update display without full reload
     const taskElements = document.querySelectorAll(`[data-task-id="${taskId}"]`);
     taskElements.forEach(el => {
@@ -807,7 +810,7 @@ function formatTime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
@@ -840,13 +843,13 @@ function formatDateShort(dateString) {
 
 function checkIfOverdue(task) {
     if (!task.due_date || task.status === 'done') return false;
-    
+
     const today = new Date();
     const dueDate = new Date(task.due_date);
-    
+
     today.setHours(0, 0, 0, 0);
     dueDate.setHours(0, 0, 0, 0);
-    
+
     return dueDate < today;
 }
 
@@ -858,20 +861,20 @@ function getFilteredTasks() {
     const statusFilter = document.getElementById('filter-status')?.value || '';
     const dateFromFilter = document.getElementById('filter-date-from')?.value || '';
     const dateToFilter = document.getElementById('filter-date-to')?.value || '';
-    
+
     return tasks.filter(task => {
         // Search filter
         if (searchFilter && !task.title.toLowerCase().includes(searchFilter)) return false;
-        
+
         // Project filter
         if (projectFilter && task.project !== projectFilter) return false;
-        
+
         // Priority filter
         if (priorityFilter && task.priority !== priorityFilter) return false;
-        
+
         // Status filter
         if (statusFilter && task.status !== statusFilter) return false;
-        
+
         // Date range filter (based on due_date)
         if (dateFromFilter && task.due_date) {
             if (task.due_date < dateFromFilter) return false;
@@ -879,7 +882,7 @@ function getFilteredTasks() {
         if (dateToFilter && task.due_date) {
             if (task.due_date > dateToFilter) return false;
         }
-        
+
         return true;
     });
 }
@@ -887,13 +890,13 @@ function getFilteredTasks() {
 function populateProjectFilter() {
     const projectFilter = document.getElementById('filter-project');
     if (!projectFilter) return;
-    
+
     // Get unique projects
     const projects = [...new Set(tasks.map(t => t.project).filter(p => p))];
-    
+
     // Save current selection
     const currentValue = projectFilter.value;
-    
+
     // Clear and repopulate
     projectFilter.innerHTML = '<option value="">All Projects</option>';
     projects.sort().forEach(project => {
@@ -902,17 +905,17 @@ function populateProjectFilter() {
         option.textContent = `📁 ${project}`;
         projectFilter.appendChild(option);
     });
-    
+
     // Restore selection
     projectFilter.value = currentValue;
 }
 
 function applyFilters() {
     const currentView = document.querySelector('.view[style="display: block;"]');
-    
+
     renderTodoList();
     renderKanban();
-    
+
     // Reload dashboard if it's the current view
     if (currentView && currentView.id === 'dashboard-view') {
         loadDashboard();
@@ -932,7 +935,249 @@ function clearFilters() {
 // Close modal when clicking outside
 window.onclick = function(event) {
     const modal = document.getElementById('task-modal');
+    const credentialModal = document.getElementById('credential-modal');
     if (event.target === modal) {
         closeModal();
     }
+    if (event.target === credentialModal) {
+        closeCredentialModal();
+    }
 }
+
+// ========== SERVER CREDENTIALS FUNCTIONS ==========
+
+// Load credentials from API
+async function loadCredentials() {
+    try {
+        const response = await fetch('/api/credentials');
+        credentials = await response.json();
+        await loadProjects(); // Load projects for dropdown
+        populateCredentialProjectList();
+        renderCredentials();
+    } catch (error) {
+        console.error('Error loading credentials:', error);
+    }
+}
+
+// Populate project list for credential form
+function populateCredentialProjectList() {
+    const datalist = document.getElementById('credential-project-list');
+    if (datalist) {
+        datalist.innerHTML = '';
+
+        // Get unique projects from tasks
+        fetch('/api/projects')
+            .then(response => response.json())
+            .then(projects => {
+                projects.forEach(project => {
+                    const option = document.createElement('option');
+                    option.value = project;
+                    datalist.appendChild(option);
+                });
+            });
+    }
+}
+
+// Render credentials list
+function renderCredentials() {
+    const credentialsList = document.getElementById('credentials-list');
+    credentialsList.innerHTML = '';
+
+    if (credentials.length === 0) {
+        credentialsList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">No credentials saved yet.</p>';
+        return;
+    }
+
+    credentials.forEach(credential => {
+        const card = document.createElement('div');
+        card.className = 'credential-card';
+        card.innerHTML = `
+            <div class="credential-header">
+                <div>
+                    <div class="credential-title">${credential.title}</div>
+                    ${credential.project ? `<span class="credential-project">📁 ${credential.project}</span>` : ''}
+                </div>
+                <div class="credential-actions">
+                    <button class="btn-edit" onclick="editCredential(${credential.id})" title="Edit">✏️</button>
+                    <button class="btn-delete" onclick="deleteCredential(${credential.id})" title="Delete">🗑️</button>
+                </div>
+            </div>
+            <div class="credential-info">
+                <div class="credential-field">
+                    <span class="credential-label">🌐 IP Address</span>
+                    <div class="credential-value-wrapper">
+                        <div class="credential-value">${credential.ip}</div>
+                        <div class="credential-btn-group">
+                            <button class="copy-btn" onclick="copyToClipboard('${credential.ip}', event)">📋 Copy</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="credential-field">
+                    <span class="credential-label">🔑 Password</span>
+                    <div class="credential-value-wrapper">
+                        <div class="credential-value">
+                            <input type="password" id="password-${credential.id}" value="${credential.password}" readonly>
+                        </div>
+                        <div class="credential-btn-group">
+                            <button class="password-toggle" onclick="togglePassword(${credential.id}, event)" title="Show/Hide">👁️</button>
+                            <button class="copy-btn" onclick="copyToClipboard('${credential.password}', event)">📋 Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        credentialsList.appendChild(card);
+    });
+}
+
+// Open add credential modal
+function openAddCredentialModal() {
+    document.getElementById('credential-modal-title').textContent = 'Add Server Credential';
+    document.getElementById('credential-form').reset();
+    document.getElementById('credential-id').value = '';
+    document.getElementById('credential-modal').style.display = 'block';
+}
+
+// Close credential modal
+function closeCredentialModal() {
+    document.getElementById('credential-modal').style.display = 'none';
+}
+
+// Save credential
+async function saveCredential(event) {
+    event.preventDefault();
+
+    const id = document.getElementById('credential-id').value;
+    const credentialData = {
+        title: document.getElementById('credential-title').value,
+        project: document.getElementById('credential-project').value,
+        ip: document.getElementById('credential-ip').value,
+        password: document.getElementById('credential-password').value
+    };
+
+    try {
+        let response;
+        if (id) {
+            response = await fetch(`/api/credentials/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentialData)
+            });
+        } else {
+            response = await fetch('/api/credentials', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentialData)
+            });
+        }
+
+        if (response.ok) {
+            closeCredentialModal();
+            await loadCredentials();
+            Swal.fire({
+                icon: 'success',
+                title: id ? 'Credential Updated!' : 'Credential Added!',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 2000,
+                timerProgressBar: true
+            });
+        }
+    } catch (error) {
+        console.error('Error saving credential:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to save credential'
+        });
+    }
+}
+
+// Edit credential
+function editCredential(id) {
+    const credential = credentials.find(c => c.id === id);
+    if (!credential) return;
+
+    document.getElementById('credential-modal-title').textContent = 'Edit Server Credential';
+    document.getElementById('credential-id').value = credential.id;
+    document.getElementById('credential-title').value = credential.title;
+    document.getElementById('credential-project').value = credential.project || '';
+    document.getElementById('credential-ip').value = credential.ip;
+    document.getElementById('credential-password').value = credential.password;
+
+    document.getElementById('credential-modal').style.display = 'block';
+}
+
+// Delete credential
+async function deleteCredential(id) {
+    const result = await Swal.fire({
+        title: 'Delete Credential?',
+        text: 'This action cannot be undone!',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Yes, delete it!',
+        cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const response = await fetch(`/api/credentials/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                await loadCredentials();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Deleted!',
+                    text: 'Credential has been deleted.',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 2000,
+                    timerProgressBar: true
+                });
+            }
+        } catch (error) {
+            console.error('Error deleting credential:', error);
+        }
+    }
+}
+
+// Toggle password visibility
+function togglePassword(id, e) {
+    if (e) e.preventDefault();
+    const input = document.getElementById(`password-${id}`);
+    const button = e ? e.target : event.target;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        button.textContent = '🙈';
+    } else {
+        input.type = 'password';
+        button.textContent = '👁️';
+    }
+}
+
+// Copy to clipboard
+async function copyToClipboard(text, e) {
+    if (e) e.preventDefault();
+    try {
+        await navigator.clipboard.writeText(text);
+        Swal.fire({
+            icon: 'success',
+            title: 'Copied to clipboard!',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 1500,
+            timerProgressBar: true
+        });
+    } catch (error) {
+        console.error('Error copying to clipboard:', error);
+    }
+}
+

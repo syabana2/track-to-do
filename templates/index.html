@@ -16,6 +16,7 @@
                 <button onclick="showView('dashboard')" class="nav-btn">Dashboard</button>
                 <button onclick="showView('todo')" class="nav-btn active">Todo List</button>
                 <button onclick="showView('kanban')" class="nav-btn">Kanban</button>
+                <button onclick="showView('credentials')" class="nav-btn">🔐 Server Credentials</button>
             </div>
         </nav>
 
@@ -132,6 +133,15 @@
             </div>
         </div>
 
+        <!-- Server Credentials View -->
+        <div id="credentials-view" class="view" style="display: none;">
+            <div class="section-header">
+                <h2>🔐 Server Credentials</h2>
+                <button onclick="openAddCredentialModal()" class="btn-primary">+ Add Credential</button>
+            </div>
+            <div id="credentials-list" class="credentials-grid"></div>
+        </div>
+
         <!-- Add/Edit Task Modal -->
         <div id="task-modal" class="modal">
             <div class="modal-content">
@@ -203,6 +213,47 @@
             </div>
         </div>
     </div>
+
+        <!-- Add/Edit Credential Modal -->
+        <div id="credential-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="credential-modal-title">Add Server Credential</h3>
+                    <span class="close" onclick="closeCredentialModal()">&times;</span>
+                </div>
+                <form id="credential-form" onsubmit="saveCredential(event)">
+                    <input type="hidden" id="credential-id">
+                    
+                    <div class="form-section">
+                        <div class="form-group-full">
+                            <label>Title *</label>
+                            <input type="text" id="credential-title" required placeholder="e.g., Production Server">
+                        </div>
+                        
+                        <div class="form-group-full">
+                            <label>📁 Project</label>
+                            <input type="text" id="credential-project" list="credential-project-list" placeholder="Select or type project name">
+                            <datalist id="credential-project-list"></datalist>
+                        </div>
+                        
+                        <div class="form-group-full">
+                            <label>IP Address *</label>
+                            <input type="text" id="credential-ip" required placeholder="e.g., 192.168.1.100">
+                        </div>
+                        
+                        <div class="form-group-full">
+                            <label>Password *</label>
+                            <input type="password" id="credential-password" required placeholder="Enter password">
+                        </div>
+                    </div>
+                    
+                    <div class="modal-actions">
+                        <button type="button" onclick="closeCredentialModal()" class="btn-secondary">Cancel</button>
+                        <button type="submit" class="btn-primary">Save Credential</button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
     <script src="/static/script.js"></script>
 </body>
