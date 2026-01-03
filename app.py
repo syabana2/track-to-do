@@ -340,6 +340,19 @@ def get_active_timers():
     conn.close()
     return jsonify(active_timers)
 
+@app.route('/api/tasks/<int:task_id>/time-spent', methods=['PUT'])
+def update_time_spent(task_id):
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    time_spent = data.get('time_spent', 0)
+    cursor.execute('UPDATE tasks SET time_spent=? WHERE id=?', (time_spent, task_id))
+    
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Time spent updated'})
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, port=5000)

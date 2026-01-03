@@ -220,7 +220,7 @@ function createTaskElement(task) {
             <span class="task-status status-${task.status}">${getStatusLabel(task.status)}</span>
             <span class="priority-badge priority-${task.priority || 'medium'}">${priorityEmoji[task.priority || 'medium']} ${capitalizeFirst(task.priority || 'medium')}</span>
             ${task.project ? `<span class="task-project">📁 ${task.project}</span>` : ''}
-            <span class="task-time-display">⏱️ ${timeSpent}</span>
+            <span class="task-time-display">⏱️ ${timeSpent} <button class="edit-time-btn" onclick="editTimeSpent(${task.id}, event)" title="Edit Time">✏️</button></span>
         </div>
         <div class="task-dates">
             ${task.created_at ? `<span class="task-date-item">📅 Created: ${formatDateShort(task.created_at)}</span>` : ''}
@@ -1273,6 +1273,105 @@ async function copyToClipboard(text, e) {
         });
     } catch (error) {
         console.error('Error copying to clipboard:', error);
+    }
+}
+
+// Edit time spent
+async function editTimeSpent(taskId, e) {
+    if (e) e.stopPropagation();
+    
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    
+    const currentSeconds = task.time_spent || 0;
+    const hours = Math.floor(currentSeconds / 3600);
+    const minutes = Math.floor((currentSeconds % 3600) / 60);
+    const seconds = currentSeconds % 60;
+    
+    const { value: formValues } = await Swal.fire({
+        title: 'Edit Time Spent',
+        html: `
+            <div style="display: flex; gap: 10px; justify-content: center; align-items: center;">
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <label style="margin-bottom: 5px; font-size: 12px; color: var(--text-secondary);">Hours</label>
+                    <input id="hours-input" type="number" min="0" value="${hours}" 
+                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center; 
+                                  background: var(--bg-tertiary); color: var(--text-primary); 
+                                  border: 1px solid var(--border); border-radius: 6px;">
+                </div>
+                <span style="font-size: 24px; margin-top: 20px;">:</span>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <label style="margin-bottom: 5px; font-size: 12px; color: var(--text-secondary);">Minutes</label>
+                    <input id="minutes-input" type="number" min="0" max="59" value="${minutes}" 
+                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center; 
+                                  background: var(--bg-tertiary); color: var(--text-primary); 
+                                  border: 1px solid var(--border); border-radius: 6px;">
+                </div>
+                <span style="font-size: 24px; margin-top: 20px;">:</span>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <label style="margin-bottom: 5px; font-size: 12px; color: var(--text-secondary);">Seconds</label>
+                    <input id="seconds-input" type="number" min="0" max="59" value="${seconds}" 
+                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center; 
+                                  background: var(--bg-tertiary); color: var(--text-primary); 
+                                  border: 1px solid var(--border); border-radius: 6px;">
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Save',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#6366f1',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        preConfirm: () => {
+            const h = parseInt(document.getElementById('hours-input').value) || 0;
+            const m = parseInt(document.getElementById('minutes-input').value) || 0;
+            const s = parseInt(document.getElementById('seconds-input').value) || 0;
+            return { hours: h, minutes: m, seconds: s };
+        }
+    });
+    
+    if (formValues) {
+        const newTimeSpent = (formValues.hours * 3600) + (formValues.minutes * 60) + formValues.seconds;
+        
+        try {
+            const response = await fetch(`/api/tasks/${taskId}/time-spent`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ time_spent: newTimeSpent })
+            });
+            
+            if (response.ok) {
+                task.time_spent = newTimeSpent;
+                
+                // Update timerStartTimes if timer is active
+                if (timerStartTimes[taskId]) {
+                    timerStartTimes[taskId].baseTimeSpent = newTimeSpent;
+                    timerStartTimes[taskId].startTime = new Date();
+                }
+                
+                renderTodoList();
+                renderKanban();
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Time Updated!',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 2000,
+                    timerProgressBar: true
+                });
+            }
+        } catch (error) {
+            console.error('Error updating time spent:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Failed to update time spent'
+            });
+        }
     }
 }
 

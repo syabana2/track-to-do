@@ -246,6 +246,23 @@ body {
     background: var(--bg-primary);
 }
 
+.edit-time-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: all 0.2s;
+    opacity: 0.6;
+    margin-left: 4px;
+}
+
+.edit-time-btn:hover {
+    opacity: 1;
+    background: var(--accent);
+}
+
 .task-description {
     color: var(--text-secondary);
     font-size: 13px;
