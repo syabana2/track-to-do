@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Markdown & Syntax Highlighting -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -17,6 +21,7 @@
                 <button onclick="showView('todo')" class="nav-btn active">Todo List</button>
                 <button onclick="showView('kanban')" class="nav-btn">Kanban</button>
                 <button onclick="showView('credentials')" class="nav-btn">Server Credentials</button>
+                <button onclick="showView('notes')" class="nav-btn">Notes</button>
             </div>
         </nav>
 
@@ -142,6 +147,27 @@
             <div id="credentials-list" class="credentials-grid"></div>
         </div>
 
+        <!-- Notes View -->
+        <div id="notes-view" class="view" style="display: none;">
+            <div class="section-header">
+                <h2>📝 Notes & Documentation</h2>
+                <button onclick="openAddNoteModal()" class="btn-primary">+ Add Note</button>
+            </div>
+
+            <!-- Notes Filter -->
+            <div class="notes-filters">
+                <input type="text" id="notes-search" placeholder="Search notes..." onkeyup="filterNotes()">
+                <select id="notes-tag-filter" onchange="filterNotes()">
+                    <option value="">All Tags</option>
+                </select>
+                <select id="notes-task-filter" onchange="filterNotes()">
+                    <option value="">All Tasks</option>
+                </select>
+            </div>
+
+            <div id="notes-list" class="notes-grid"></div>
+        </div>
+
         <!-- Add/Edit Task Modal -->
         <div id="task-modal" class="modal">
             <div class="modal-content">
@@ -250,6 +276,82 @@
                     <div class="modal-actions">
                         <button type="button" onclick="closeCredentialModal()" class="btn-secondary">Cancel</button>
                         <button type="submit" class="btn-primary">Save Credential</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Add/Edit Note Modal -->
+        <div id="note-modal" class="modal">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3 id="note-modal-title">Add New Note</h3>
+                    <span class="close" onclick="closeNoteModal()">&times;</span>
+                </div>
+                <form id="note-form" onsubmit="saveNote(event)">
+                    <input type="hidden" id="note-id">
+
+                    <div class="form-section">
+                        <div class="form-group-full">
+                            <label>Title *</label>
+                            <input type="text" id="note-title" required placeholder="Enter note title">
+                        </div>
+
+                        <div class="form-group-full">
+                            <label>Content (Markdown supported)</label>
+                            <div class="editor-toolbar">
+                                <button type="button" onclick="insertMarkdown('**', '**')" title="Bold">B</button>
+                                <button type="button" onclick="insertMarkdown('*', '*')" title="Italic">I</button>
+                                <button type="button" onclick="insertMarkdown('`', '`')" title="Code">&lt;/&gt;</button>
+                                <button type="button" onclick="insertMarkdown('```\n', '\n```')" title="Code Block">{ }</button>
+                                <button type="button" onclick="insertMarkdown('# ', '')" title="Heading">#</button>
+                                <button type="button" onclick="insertMarkdown('- ', '')" title="List">•</button>
+                                <button type="button" onclick="insertMarkdown('[', '](url)')" title="Link">🔗</button>
+                                <button type="button" onclick="togglePreview()" id="preview-toggle">Preview</button>
+                            </div>
+                            <textarea id="note-content" rows="10" placeholder="Write your note in Markdown..."></textarea>
+                            <div id="note-preview" class="markdown-preview" style="display: none;"></div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Tags (comma separated)</label>
+                                <input type="text" id="note-tags" placeholder="e.g., documentation, api, tutorial">
+                            </div>
+                            <div class="form-group">
+                                <label>Link to Task (optional)</label>
+                                <div class="searchable-dropdown" id="task-dropdown-container">
+                                    <input type="text" id="note-task-search" placeholder="Search tasks..." autocomplete="off">
+                                    <div class="searchable-dropdown-list" id="task-dropdown-list"></div>
+                                </div>
+                                <input type="hidden" id="note-task">
+                            </div>
+                        </div>
+
+                        <div class="form-group-full">
+                            <label>Link to Notes (internal linking)</label>
+                            <div id="note-links-container" class="notes-links"></div>
+                            <div class="searchable-dropdown" id="note-link-dropdown-container">
+                                <input type="text" id="note-link-search" placeholder="Search notes to link..." autocomplete="off">
+                                <div class="searchable-dropdown-list" id="note-link-dropdown-list"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group-full">
+                            <label>Attachments</label>
+                            <input type="file" id="note-attachment" multiple>
+                            <div id="note-attachments-list" class="attachments-list"></div>
+                        </div>
+
+                        <div class="form-group-full" id="version-history-section" style="display: none;">
+                            <label>Version History</label>
+                            <div id="version-history-list" class="version-list"></div>
+                        </div>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" onclick="closeNoteModal()" class="btn-secondary">Cancel</button>
+                        <button type="submit" class="btn-primary">Save Note</button>
                     </div>
                 </form>
             </div>

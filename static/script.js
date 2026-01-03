@@ -5,6 +5,47 @@ let tasksCreatedChart = null;
 let tasksCompletedChart = null;
 let credentials = [];
 
+// Configure marked.js for better markdown rendering
+if (typeof marked !== 'undefined') {
+    marked.setOptions({
+        breaks: true,
+        gfm: true,
+        headerIds: true,
+        mangle: false,
+        sanitize: false,
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                try {
+                    return hljs.highlight(code, { language: lang }).value;
+                } catch (err) {
+                    console.error('Highlight error:', err);
+                }
+            }
+            return hljs.highlightAuto(code).value;
+        }
+    });
+
+    // Custom renderer for proper task lists styling
+    const renderer = new marked.Renderer();
+
+    renderer.listitem = function(text, task, checked) {
+        if (task) {
+            // Remove any existing checkbox from text to prevent duplication
+            let cleanText = text.replace(/<input[^>]*>/gi, '');
+            return `<li class="task-list-item"><input type="checkbox" ${checked ? 'checked' : ''} disabled> ${cleanText}</li>\n`;
+        }
+        return `<li>${text}</li>\n`;
+    };
+
+    renderer.list = function(body, ordered, start) {
+        const type = ordered ? 'ol' : 'ul';
+        const startAttr = (ordered && start !== 1) ? ` start="${start}"` : '';
+        return `<${type}${startAttr}>\n${body}</${type}>\n`;
+    };
+
+    marked.use({ renderer });
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
     await loadTasks();
@@ -20,6 +61,14 @@ function showView(viewName) {
     document.getElementById(`${viewName}-view`).style.display = 'block';
     event.target.classList.add('active');
 
+    // Hide/show global filters based on view
+    const filtersContainer = document.querySelector('.filters-container');
+    if (viewName === 'notes' || viewName === 'credentials') {
+        filtersContainer.style.display = 'none';
+    } else {
+        filtersContainer.style.display = 'grid';
+    }
+
     if (viewName === 'dashboard') {
         loadDashboard();
     } else if (viewName === 'kanban') {
@@ -28,6 +77,8 @@ function showView(viewName) {
         renderTodoList();
     } else if (viewName === 'credentials') {
         loadCredentials();
+    } else if (viewName === 'notes') {
+        loadNotes();
     }
 }
 
@@ -50,31 +101,31 @@ async function restoreActiveTimers() {
     try {
         const response = await fetch('/api/tasks/active-timers');
         const activeTimersList = await response.json();
-        
+
         // Restore each active timer
         for (const timerInfo of activeTimersList) {
             const taskId = timerInfo.id;
-            
+
             // Store the start time for this timer session
             timerStartTimes[taskId] = {
                 startTime: new Date(timerInfo.start_time.replace(' ', 'T')),
                 baseTimeSpent: timerInfo.time_spent || 0
             };
-            
+
             // Update the task's display immediately
             const task = tasks.find(t => t.id === taskId);
             if (task) {
                 const now = new Date();
                 const elapsed = Math.floor((now - timerStartTimes[taskId].startTime) / 1000);
                 task.time_spent = timerStartTimes[taskId].baseTimeSpent + elapsed;
-                
+
                 // Start the interval timer to continue counting
                 activeTimers[taskId] = setInterval(() => {
                     updateTaskTimer(taskId);
                 }, 1000);
             }
         }
-        
+
         // Re-render to show timer buttons correctly
         if (activeTimersList.length > 0) {
             renderTodoList();
@@ -786,14 +837,14 @@ async function startTimer(taskId) {
 
         // Start new timer
         await fetch(`/api/tasks/${taskId}/start-timer`, { method: 'POST' });
-        
+
         // Store the start time for this timer session
         const task = tasks.find(t => t.id === taskId);
         timerStartTimes[taskId] = {
             startTime: new Date(),
             baseTimeSpent: task ? task.time_spent || 0 : 0
         };
-        
+
         activeTimers[taskId] = setInterval(() => {
             updateTaskTimer(taskId);
         }, 1000); // Update every second
@@ -813,22 +864,22 @@ async function startTimer(taskId) {
 async function stopTimer(taskId, shouldReload = true) {
     try {
         const response = await fetch(`/api/tasks/${taskId}/stop-timer`, { method: 'POST' });
-        
+
         if (!response.ok) {
             throw new Error('Failed to stop timer');
         }
-        
+
         // Clear the interval timer
         if (activeTimers[taskId]) {
             clearInterval(activeTimers[taskId]);
             delete activeTimers[taskId];
         }
-        
+
         // Clear the start time tracking
         if (timerStartTimes[taskId]) {
             delete timerStartTimes[taskId];
         }
-        
+
         // Reload tasks and re-render
         if (shouldReload) {
             await loadTasks();
@@ -997,6 +1048,16 @@ function applyFilters() {
     if (currentView && currentView.id === 'credentials-view') {
         renderCredentials();
     }
+}
+
+function clearFilters() {
+    document.getElementById('filter-search').value = '';
+    document.getElementById('filter-project').value = '';
+    document.getElementById('filter-priority').value = '';
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-date-from').value = '';
+    document.getElementById('filter-date-to').value = '';
+    applyFilters();
 }
 
 // Close modal when clicking outside
@@ -1279,40 +1340,40 @@ async function copyToClipboard(text, e) {
 // Edit time spent
 async function editTimeSpent(taskId, e) {
     if (e) e.stopPropagation();
-    
+
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    
+
     const currentSeconds = task.time_spent || 0;
     const hours = Math.floor(currentSeconds / 3600);
     const minutes = Math.floor((currentSeconds % 3600) / 60);
     const seconds = currentSeconds % 60;
-    
+
     const { value: formValues } = await Swal.fire({
         title: 'Edit Time Spent',
         html: `
             <div style="display: flex; gap: 10px; justify-content: center; align-items: center;">
                 <div style="display: flex; flex-direction: column; align-items: center;">
                     <label style="margin-bottom: 5px; font-size: 12px; color: var(--text-secondary);">Hours</label>
-                    <input id="hours-input" type="number" min="0" value="${hours}" 
-                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center; 
-                                  background: var(--bg-tertiary); color: var(--text-primary); 
+                    <input id="hours-input" type="number" min="0" value="${hours}"
+                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center;
+                                  background: var(--bg-tertiary); color: var(--text-primary);
                                   border: 1px solid var(--border); border-radius: 6px;">
                 </div>
                 <span style="font-size: 24px; margin-top: 20px;">:</span>
                 <div style="display: flex; flex-direction: column; align-items: center;">
                     <label style="margin-bottom: 5px; font-size: 12px; color: var(--text-secondary);">Minutes</label>
-                    <input id="minutes-input" type="number" min="0" max="59" value="${minutes}" 
-                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center; 
-                                  background: var(--bg-tertiary); color: var(--text-primary); 
+                    <input id="minutes-input" type="number" min="0" max="59" value="${minutes}"
+                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center;
+                                  background: var(--bg-tertiary); color: var(--text-primary);
                                   border: 1px solid var(--border); border-radius: 6px;">
                 </div>
                 <span style="font-size: 24px; margin-top: 20px;">:</span>
                 <div style="display: flex; flex-direction: column; align-items: center;">
                     <label style="margin-bottom: 5px; font-size: 12px; color: var(--text-secondary);">Seconds</label>
-                    <input id="seconds-input" type="number" min="0" max="59" value="${seconds}" 
-                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center; 
-                                  background: var(--bg-tertiary); color: var(--text-primary); 
+                    <input id="seconds-input" type="number" min="0" max="59" value="${seconds}"
+                           style="width: 70px; padding: 8px; font-size: 16px; text-align: center;
+                                  background: var(--bg-tertiary); color: var(--text-primary);
                                   border: 1px solid var(--border); border-radius: 6px;">
                 </div>
             </div>
@@ -1331,29 +1392,29 @@ async function editTimeSpent(taskId, e) {
             return { hours: h, minutes: m, seconds: s };
         }
     });
-    
+
     if (formValues) {
         const newTimeSpent = (formValues.hours * 3600) + (formValues.minutes * 60) + formValues.seconds;
-        
+
         try {
             const response = await fetch(`/api/tasks/${taskId}/time-spent`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ time_spent: newTimeSpent })
             });
-            
+
             if (response.ok) {
                 task.time_spent = newTimeSpent;
-                
+
                 // Update timerStartTimes if timer is active
                 if (timerStartTimes[taskId]) {
                     timerStartTimes[taskId].baseTimeSpent = newTimeSpent;
                     timerStartTimes[taskId].startTime = new Date();
                 }
-                
+
                 renderTodoList();
                 renderKanban();
-                
+
                 Swal.fire({
                     icon: 'success',
                     title: 'Time Updated!',
@@ -1375,3 +1436,788 @@ async function editTimeSpent(taskId, e) {
     }
 }
 
+
+// ==================== NOTES SYSTEM ====================
+
+let notes = [];
+let allNotes = []; // For internal linking
+let currentNoteLinkedNotes = []; // Store linked note IDs for current note
+
+// Searchable dropdown state
+let taskDropdownState = {
+    allItems: [],
+    filteredItems: [],
+    displayedCount: 0,
+    itemsPerPage: 10,
+    selectedTaskId: null
+};
+
+let noteLinkDropdownState = {
+    allItems: [],
+    filteredItems: [],
+    displayedCount: 0,
+    itemsPerPage: 10
+};
+
+// Initialize task searchable dropdown
+function initTaskDropdown() {
+    const searchInput = document.getElementById('note-task-search');
+    const dropdownList = document.getElementById('task-dropdown-list');
+
+    // Populate all tasks
+    taskDropdownState.allItems = tasks.map(task => ({
+        id: task.id,
+        text: task.title
+    }));
+    taskDropdownState.filteredItems = [...taskDropdownState.allItems];
+    taskDropdownState.displayedCount = 0;
+
+    // Show dropdown on focus
+    searchInput.addEventListener('focus', () => {
+        taskDropdownState.displayedCount = 0;
+        renderTaskDropdown();
+        dropdownList.classList.add('active');
+    });
+
+    // Search on input
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        taskDropdownState.filteredItems = taskDropdownState.allItems.filter(item =>
+            item.text.toLowerCase().includes(searchTerm)
+        );
+        taskDropdownState.displayedCount = 0;
+        renderTaskDropdown();
+    });
+
+    // Close dropdown on click outside
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
+            dropdownList.classList.remove('active');
+        }
+    });
+
+    // Infinite scroll
+    dropdownList.addEventListener('scroll', () => {
+        if (dropdownList.scrollTop + dropdownList.clientHeight >= dropdownList.scrollHeight - 10) {
+            loadMoreTaskItems();
+        }
+    });
+}
+
+function renderTaskDropdown() {
+    const dropdownList = document.getElementById('task-dropdown-list');
+    dropdownList.innerHTML = '';
+
+    // Add "No task" option
+    const noTaskItem = document.createElement('div');
+    noTaskItem.className = 'searchable-dropdown-item';
+    if (!taskDropdownState.selectedTaskId) {
+        noTaskItem.classList.add('selected');
+    }
+    noTaskItem.textContent = 'No task';
+    noTaskItem.addEventListener('click', () => selectTask(null, 'No task'));
+    dropdownList.appendChild(noTaskItem);
+
+    // Render items
+    loadMoreTaskItems();
+}
+
+function loadMoreTaskItems() {
+    const dropdownList = document.getElementById('task-dropdown-list');
+    const start = taskDropdownState.displayedCount;
+    const end = Math.min(start + taskDropdownState.itemsPerPage, taskDropdownState.filteredItems.length);
+
+    for (let i = start; i < end; i++) {
+        const item = taskDropdownState.filteredItems[i];
+        const itemEl = document.createElement('div');
+        itemEl.className = 'searchable-dropdown-item';
+        if (taskDropdownState.selectedTaskId === item.id) {
+            itemEl.classList.add('selected');
+        }
+        itemEl.textContent = item.text;
+        itemEl.addEventListener('click', () => selectTask(item.id, item.text));
+        dropdownList.appendChild(itemEl);
+    }
+
+    taskDropdownState.displayedCount = end;
+
+    // Show empty message if no results
+    if (taskDropdownState.filteredItems.length === 0) {
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'searchable-dropdown-empty';
+        emptyEl.textContent = 'No tasks found';
+        dropdownList.appendChild(emptyEl);
+    }
+}
+
+function selectTask(taskId, taskText) {
+    taskDropdownState.selectedTaskId = taskId;
+    document.getElementById('note-task').value = taskId || '';
+    document.getElementById('note-task-search').value = taskText;
+    document.getElementById('task-dropdown-list').classList.remove('active');
+}
+
+// Initialize note link searchable dropdown
+function initNoteLinkDropdown(excludeNoteId = null) {
+    const searchInput = document.getElementById('note-link-search');
+    const dropdownList = document.getElementById('note-link-dropdown-list');
+
+    // Populate all notes except current and already linked
+    noteLinkDropdownState.allItems = allNotes
+        .filter(note => note.id !== parseInt(excludeNoteId) && !currentNoteLinkedNotes.includes(note.id))
+        .map(note => ({
+            id: note.id,
+            text: note.title
+        }));
+    noteLinkDropdownState.filteredItems = [...noteLinkDropdownState.allItems];
+    noteLinkDropdownState.displayedCount = 0;
+
+    // Show dropdown on focus
+    searchInput.addEventListener('focus', () => {
+        noteLinkDropdownState.displayedCount = 0;
+        renderNoteLinkDropdown();
+        dropdownList.classList.add('active');
+    });
+
+    // Search on input
+    searchInput.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        noteLinkDropdownState.filteredItems = noteLinkDropdownState.allItems.filter(item =>
+            item.text.toLowerCase().includes(searchTerm)
+        );
+        noteLinkDropdownState.displayedCount = 0;
+        renderNoteLinkDropdown();
+    });
+
+    // Close dropdown on click outside
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !dropdownList.contains(e.target)) {
+            dropdownList.classList.remove('active');
+        }
+    });
+
+    // Infinite scroll
+    dropdownList.addEventListener('scroll', () => {
+        if (dropdownList.scrollTop + dropdownList.clientHeight >= dropdownList.scrollHeight - 10) {
+            loadMoreNoteLinkItems();
+        }
+    });
+}
+
+function renderNoteLinkDropdown() {
+    const dropdownList = document.getElementById('note-link-dropdown-list');
+    dropdownList.innerHTML = '';
+
+    // Update available items (exclude already linked notes)
+    noteLinkDropdownState.allItems = allNotes
+        .filter(note => {
+            const currentNoteId = parseInt(document.getElementById('note-id').value);
+            return note.id !== currentNoteId && !currentNoteLinkedNotes.includes(note.id);
+        })
+        .map(note => ({
+            id: note.id,
+            text: note.title
+        }));
+
+    const searchTerm = document.getElementById('note-link-search').value.toLowerCase();
+    noteLinkDropdownState.filteredItems = noteLinkDropdownState.allItems.filter(item =>
+        item.text.toLowerCase().includes(searchTerm)
+    );
+    noteLinkDropdownState.displayedCount = 0;
+
+    loadMoreNoteLinkItems();
+}
+
+function loadMoreNoteLinkItems() {
+    const dropdownList = document.getElementById('note-link-dropdown-list');
+    const start = noteLinkDropdownState.displayedCount;
+    const end = Math.min(start + noteLinkDropdownState.itemsPerPage, noteLinkDropdownState.filteredItems.length);
+
+    for (let i = start; i < end; i++) {
+        const item = noteLinkDropdownState.filteredItems[i];
+        const itemEl = document.createElement('div');
+        itemEl.className = 'searchable-dropdown-item';
+        itemEl.textContent = item.text;
+        itemEl.addEventListener('click', () => selectNoteLink(item.id, item.text));
+        dropdownList.appendChild(itemEl);
+    }
+
+    noteLinkDropdownState.displayedCount = end;
+
+    // Show empty message if no results
+    if (noteLinkDropdownState.filteredItems.length === 0) {
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'searchable-dropdown-empty';
+        emptyEl.textContent = 'No notes found';
+        dropdownList.appendChild(emptyEl);
+    }
+}
+
+function selectNoteLink(noteId, noteText) {
+    if (!currentNoteLinkedNotes.includes(noteId)) {
+        currentNoteLinkedNotes.push(noteId);
+        renderNoteLinks();
+        document.getElementById('note-link-search').value = '';
+        renderNoteLinkDropdown();
+    }
+    document.getElementById('note-link-dropdown-list').classList.remove('active');
+}
+
+// Load notes from API
+async function loadNotes() {
+    try {
+        const response = await fetch('/api/notes');
+        notes = await response.json();
+        allNotes = [...notes];
+        renderNotes();
+        populateNotesFilters();
+    } catch (error) {
+        console.error('Error loading notes:', error);
+    }
+}
+
+// Render notes grid
+function renderNotes() {
+    const notesList = document.getElementById('notes-list');
+    notesList.innerHTML = '';
+
+    if (notes.length === 0) {
+        notesList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 2rem;">No notes found. Create your first note!</p>';
+        return;
+    }
+
+    notes.forEach(note => {
+        const noteCard = document.createElement('div');
+        noteCard.className = 'note-card';
+
+        // Parse markdown for preview
+        const contentPreview = note.content ?
+            (note.content.substring(0, 200) + (note.content.length > 200 ? '...' : '')) :
+            'No content';
+
+        // Tags HTML
+        const tagsHtml = note.tags && note.tags.length > 0 ?
+            note.tags.map(tag => `<span class="note-tag">${tag}</span>`).join('') :
+            '';
+
+        noteCard.innerHTML = `
+            <div class="note-card-header">
+                <h3 class="note-title">${note.title}</h3>
+                <div class="note-actions">
+                    <button onclick="viewNote(${note.id})" class="btn-icon" title="View">👁️</button>
+                    <button onclick="editNote(${note.id})" class="btn-icon" title="Edit">✏️</button>
+                    <button onclick="deleteNote(${note.id})" class="btn-icon" title="Delete">🗑️</button>
+                </div>
+            </div>
+            <div class="note-content-preview">${contentPreview}</div>
+            ${tagsHtml ? `<div class="note-tags">${tagsHtml}</div>` : ''}
+            <div class="note-meta">
+                <span>📅 ${formatNoteDate(note.updated_at || note.created_at)}</span>
+                ${note.attachment_count > 0 ? `<span>📎 ${note.attachment_count}</span>` : ''}
+                ${note.task_id ? `<span>🔗 Task</span>` : ''}
+            </div>
+        `;
+
+        notesList.appendChild(noteCard);
+    });
+}
+
+// Filter notes
+function filterNotes() {
+    const searchTerm = document.getElementById('notes-search').value.toLowerCase();
+    const tagFilter = document.getElementById('notes-tag-filter').value;
+    const taskFilter = document.getElementById('notes-task-filter').value;
+
+    notes = allNotes.filter(note => {
+        const matchesSearch = !searchTerm ||
+            note.title.toLowerCase().includes(searchTerm) ||
+            (note.content && note.content.toLowerCase().includes(searchTerm));
+
+        const matchesTag = !tagFilter || (note.tags && note.tags.includes(tagFilter));
+
+        const matchesTask = !taskFilter ||
+            (taskFilter === 'no-task' && !note.task_id) ||
+            (note.task_id && note.task_id.toString() === taskFilter);
+
+        return matchesSearch && matchesTag && matchesTask;
+    });
+
+    renderNotes();
+}
+
+// Populate notes filters
+function populateNotesFilters() {
+    // Populate tags filter
+    const tagFilter = document.getElementById('notes-tag-filter');
+    const allTags = [...new Set(allNotes.flatMap(note => note.tags || []))];
+
+    tagFilter.innerHTML = '<option value="">All Tags</option>';
+    allTags.forEach(tag => {
+        const option = document.createElement('option');
+        option.value = tag;
+        option.textContent = tag;
+        tagFilter.appendChild(option);
+    });
+
+    // Populate task filter
+    const taskFilter = document.getElementById('notes-task-filter');
+    taskFilter.innerHTML = '<option value="">All Tasks</option><option value="no-task">No Task</option>';
+
+    tasks.forEach(task => {
+        const option = document.createElement('option');
+        option.value = task.id;
+        option.textContent = task.title;
+        taskFilter.appendChild(option);
+    });
+}
+
+// Open add note modal
+async function openAddNoteModal() {
+    document.getElementById('note-modal-title').textContent = 'Add New Note';
+    document.getElementById('note-form').reset();
+    document.getElementById('note-id').value = '';
+    document.getElementById('version-history-section').style.display = 'none';
+    document.getElementById('note-attachments-list').innerHTML = '';
+    document.getElementById('note-links-container').innerHTML = '';
+    currentNoteLinkedNotes = [];
+
+    // Reset task dropdown
+    document.getElementById('note-task').value = '';
+    document.getElementById('note-task-search').value = '';
+    taskDropdownState.selectedTaskId = null;
+
+    // Reset note link search
+    document.getElementById('note-link-search').value = '';
+
+    // Initialize dropdowns
+    initTaskDropdown();
+    initNoteLinkDropdown();
+
+    document.getElementById('note-modal').style.display = 'block';
+}
+
+// View note (read-only with markdown rendered)
+async function viewNote(noteId) {
+    try {
+        const response = await fetch(`/api/notes/${noteId}`);
+        const note = await response.json();
+
+        // Render markdown with syntax highlighting
+        const renderedContent = marked.parse(note.content || 'No content available');
+
+        // Apply syntax highlighting to any code blocks that weren't highlighted
+        setTimeout(() => {
+            document.querySelectorAll('.swal2-container pre code:not(.hljs)').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }, 50);
+
+        // Format attachments
+        const attachmentsHtml = note.attachments && note.attachments.length > 0 ?
+            `<div style="margin-top: 1rem;">
+                <strong>Attachments:</strong><br>
+                ${note.attachments.map(att =>
+                    `<a href="/${att.filepath}" target="_blank" style="color: var(--accent);">📎 ${att.filename}</a>`
+                ).join('<br>')}
+            </div>` : '';
+
+        // Format linked notes
+        const linkedNotesHtml = note.linked_notes && note.linked_notes.length > 0 ?
+            `<div style="margin-top: 1rem;">
+                <strong>Linked Notes:</strong><br>
+                ${note.linked_notes.map(ln =>
+                    `<a href="#" onclick="viewNote(${ln.id}); return false;" style="color: var(--accent);">🔗 ${ln.title}</a>`
+                ).join('<br>')}
+            </div>` : '';
+
+        Swal.fire({
+            title: note.title,
+            html: `
+                ${note.tags && note.tags.length > 0 ? `<div style="margin-bottom: 1rem;">${note.tags.map(tag => `<span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 5px;">${tag}</span>`).join('')}</div>` : ''}
+                <div class="markdown-content" style="text-align: left; max-height: 60vh; overflow-y: auto; padding: 1rem; background: var(--bg-tertiary); border-radius: 8px;">
+                    ${renderedContent}
+                </div>
+                ${attachmentsHtml}
+                ${linkedNotesHtml}
+                <div style="margin-top: 1rem; font-size: 12px; color: var(--text-secondary);">
+                    Created: ${formatNoteDate(note.created_at)} | Updated: ${formatNoteDate(note.updated_at)}
+                </div>
+            `,
+            width: '800px',
+            showCancelButton: true,
+            confirmButtonText: 'Edit',
+            cancelButtonText: 'Close',
+            confirmButtonColor: '#6366f1',
+            background: 'var(--bg-secondary)',
+            color: 'var(--text-primary)',
+        }).then((result) => {
+            if (result.isConfirmed) {
+                editNote(noteId);
+            }
+        });
+
+    } catch (error) {
+        console.error('Error viewing note:', error);
+        Swal.fire('Error', 'Failed to load note', 'error');
+    }
+}
+
+// Edit note
+async function editNote(noteId) {
+    try {
+        const response = await fetch(`/api/notes/${noteId}`);
+        const note = await response.json();
+
+        document.getElementById('note-modal-title').textContent = 'Edit Note';
+        document.getElementById('note-id').value = note.id;
+        document.getElementById('note-title').value = note.title;
+        document.getElementById('note-content').value = note.content || '';
+        document.getElementById('note-tags').value = note.tags ? note.tags.join(', ') : '';
+        document.getElementById('note-task').value = note.task_id || '';
+
+        // Set task dropdown
+        const selectedTask = tasks.find(t => t.id === note.task_id);
+        taskDropdownState.selectedTaskId = note.task_id || null;
+        document.getElementById('note-task-search').value = selectedTask ? selectedTask.title : '';
+
+        // Populate note links
+        currentNoteLinkedNotes = note.linked_notes ? note.linked_notes.map(ln => ln.id) : [];
+        renderNoteLinks();
+        document.getElementById('note-link-search').value = '';
+
+        // Initialize dropdowns
+        initTaskDropdown();
+        initNoteLinkDropdown(noteId);
+
+        // Show attachments
+        const attachmentsList = document.getElementById('note-attachments-list');
+        attachmentsList.innerHTML = '';
+        if (note.attachments && note.attachments.length > 0) {
+            note.attachments.forEach(att => {
+                const attDiv = document.createElement('div');
+                attDiv.className = 'attachment-item';
+                attDiv.innerHTML = `
+                    <span>📎 ${att.filename} (${formatFileSize(att.file_size)})</span>
+                    <button type="button" onclick="deleteAttachment(${note.id}, ${att.id})" class="btn-delete-small">×</button>
+                `;
+                attachmentsList.appendChild(attDiv);
+            });
+        }
+
+        // Load version history
+        await loadVersionHistory(noteId);
+
+        document.getElementById('note-modal').style.display = 'block';
+    } catch (error) {
+        console.error('Error loading note:', error);
+        Swal.fire('Error', 'Failed to load note', 'error');
+    }
+}
+
+// Save note (create or update)
+async function saveNote(event) {
+    event.preventDefault();
+
+    const noteId = document.getElementById('note-id').value;
+    const noteData = {
+        title: document.getElementById('note-title').value,
+        content: document.getElementById('note-content').value,
+        task_id: document.getElementById('note-task').value || null,
+        tags: document.getElementById('note-tags').value
+            .split(',')
+            .map(tag => tag.trim())
+            .filter(tag => tag !== ''),
+        linked_note_ids: currentNoteLinkedNotes
+    };
+
+    try {
+        let response;
+        if (noteId) {
+            response = await fetch(`/api/notes/${noteId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(noteData)
+            });
+        } else {
+            response = await fetch('/api/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(noteData)
+            });
+        }
+
+        if (response.ok) {
+            const result = await response.json();
+            const savedNoteId = noteId || result.id;
+
+            // Handle file uploads
+            const fileInput = document.getElementById('note-attachment');
+            if (fileInput.files.length > 0) {
+                await uploadAttachments(savedNoteId, fileInput.files);
+            }
+
+            await loadNotes();
+            closeNoteModal();
+
+            Swal.fire({
+                icon: 'success',
+                title: noteId ? 'Note Updated!' : 'Note Created!',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 2000,
+                timerProgressBar: true
+            });
+        }
+    } catch (error) {
+        console.error('Error saving note:', error);
+        Swal.fire('Error', 'Failed to save note', 'error');
+    }
+}
+
+// Upload attachments
+async function uploadAttachments(noteId, files) {
+    for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            await fetch(`/api/notes/${noteId}/attachments`, {
+                method: 'POST',
+                body: formData
+            });
+        } catch (error) {
+            console.error('Error uploading attachment:', error);
+        }
+    }
+}
+
+// Delete attachment
+async function deleteAttachment(noteId, attachmentId) {
+    const result = await Swal.fire({
+        title: 'Delete Attachment?',
+        text: 'This action cannot be undone!',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Delete'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const response = await fetch(`/api/notes/${noteId}/attachments/${attachmentId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                editNote(noteId); // Reload the modal
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Attachment Deleted!',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 2000
+                });
+            }
+        } catch (error) {
+            console.error('Error deleting attachment:', error);
+            Swal.fire('Error', 'Failed to delete attachment', 'error');
+        }
+    }
+}
+
+// Delete note
+async function deleteNote(noteId) {
+    const result = await Swal.fire({
+        title: 'Delete Note?',
+        text: 'This will delete the note and all its attachments. This action cannot be undone!',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Delete'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const response = await fetch(`/api/notes/${noteId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                await loadNotes();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Note Deleted!',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 2000
+                });
+            }
+        } catch (error) {
+            console.error('Error deleting note:', error);
+            Swal.fire('Error', 'Failed to delete note', 'error');
+        }
+    }
+}
+
+// Close note modal
+function closeNoteModal() {
+    document.getElementById('note-modal').style.display = 'none';
+    document.getElementById('note-preview').style.display = 'none';
+    document.getElementById('note-content').style.display = 'block';
+    document.getElementById('preview-toggle').textContent = 'Preview';
+}
+
+// Markdown editor toolbar functions
+function insertMarkdown(before, after) {
+    const textarea = document.getElementById('note-content');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = textarea.value.substring(start, end);
+    const replacement = before + selectedText + after;
+
+    textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+    textarea.focus();
+    textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+}
+
+// Toggle markdown preview
+function togglePreview() {
+    const textarea = document.getElementById('note-content');
+    const preview = document.getElementById('note-preview');
+    const toggleBtn = document.getElementById('preview-toggle');
+
+    if (preview.style.display === 'none') {
+        // Show preview
+        const content = textarea.value.trim() || 'Nothing to preview...';
+        const renderedContent = marked.parse(content);
+        preview.innerHTML = renderedContent;
+        preview.style.display = 'block';
+        textarea.style.display = 'none';
+        toggleBtn.textContent = 'Edit';
+
+        // Apply syntax highlighting to code blocks that weren't auto-highlighted
+        setTimeout(() => {
+            preview.querySelectorAll('pre code:not(.hljs)').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }, 10);
+    } else {
+        // Show editor
+        preview.style.display = 'none';
+        textarea.style.display = 'block';
+        toggleBtn.textContent = 'Preview';
+    }
+}
+
+// Internal linking functions
+function removeNoteLink(noteId) {
+    currentNoteLinkedNotes = currentNoteLinkedNotes.filter(id => id !== noteId);
+    renderNoteLinks();
+    renderNoteLinkDropdown(); // Refresh dropdown to show removed note
+}
+
+function renderNoteLinks() {
+    const container = document.getElementById('note-links-container');
+    container.innerHTML = '';
+
+    currentNoteLinkedNotes.forEach(noteId => {
+        const note = allNotes.find(n => n.id === noteId);
+        if (note) {
+            const linkDiv = document.createElement('div');
+            linkDiv.className = 'note-link-item';
+            linkDiv.innerHTML = `
+                <span>🔗 ${note.title}</span>
+                <button type="button" onclick="removeNoteLink(${noteId})" class="btn-delete-small">×</button>
+            `;
+            container.appendChild(linkDiv);
+        }
+    });
+}
+
+// Version history functions
+async function loadVersionHistory(noteId) {
+    try {
+        const response = await fetch(`/api/notes/${noteId}/versions`);
+        const versions = await response.json();
+
+        const versionList = document.getElementById('version-history-list');
+        versionList.innerHTML = '';
+
+        if (versions.length > 0) {
+            document.getElementById('version-history-section').style.display = 'block';
+
+            versions.forEach(version => {
+                const versionDiv = document.createElement('div');
+                versionDiv.className = 'version-item';
+                versionDiv.innerHTML = `
+                    <div>
+                        <strong>Version ${version.version_number}</strong> - ${formatNoteDate(version.created_at)}
+                        <br><small>${version.title}</small>
+                    </div>
+                    <button type="button" onclick="restoreVersion(${noteId}, ${version.version_number})" class="btn-restore">Restore</button>
+                `;
+                versionList.appendChild(versionDiv);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading version history:', error);
+    }
+}
+
+async function restoreVersion(noteId, versionNumber) {
+    const result = await Swal.fire({
+        title: 'Restore Version?',
+        text: `This will restore version ${versionNumber}. Current content will be saved as a new version.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Restore'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            const response = await fetch(`/api/notes/${noteId}/restore-version/${versionNumber}`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                closeNoteModal();
+                await loadNotes();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Version Restored!',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 2000
+                });
+            }
+        } catch (error) {
+            console.error('Error restoring version:', error);
+            Swal.fire('Error', 'Failed to restore version', 'error');
+        }
+    }
+}
+
+// Utility functions
+function formatNoteDate(dateString) {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}

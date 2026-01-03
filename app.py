@@ -54,6 +54,64 @@ def init_db():
         )
     ''')
 
+    # Notes/Documentation System Tables
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT,
+            task_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES tasks (id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS note_tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            tag TEXT NOT NULL,
+            FOREIGN KEY (note_id) REFERENCES notes (id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS note_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT,
+            version_number INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (note_id) REFERENCES notes (id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS note_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            filepath TEXT NOT NULL,
+            file_type TEXT,
+            file_size INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (note_id) REFERENCES notes (id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS note_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_note_id INTEGER NOT NULL,
+            target_note_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (source_note_id) REFERENCES notes (id) ON DELETE CASCADE,
+            FOREIGN KEY (target_note_id) REFERENCES notes (id) ON DELETE CASCADE
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -345,13 +403,296 @@ def update_time_spent(task_id):
     data = request.json
     conn = get_db()
     cursor = conn.cursor()
-    
+
     time_spent = data.get('time_spent', 0)
     cursor.execute('UPDATE tasks SET time_spent=? WHERE id=?', (time_spent, task_id))
-    
+
     conn.commit()
     conn.close()
     return jsonify({'message': 'Time spent updated'})
+
+# Notes API Endpoints
+@app.route('/api/notes', methods=['GET'])
+def get_notes():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Get all notes with their tags and attachment count
+    cursor.execute('''
+        SELECT n.*,
+               GROUP_CONCAT(DISTINCT nt.tag) as tags,
+               COUNT(DISTINCT na.id) as attachment_count
+        FROM notes n
+        LEFT JOIN note_tags nt ON n.id = nt.note_id
+        LEFT JOIN note_attachments na ON n.id = na.id
+        GROUP BY n.id
+        ORDER BY n.updated_at DESC
+    ''')
+    notes = []
+    for row in cursor.fetchall():
+        note = dict(row)
+        note['tags'] = note['tags'].split(',') if note['tags'] else []
+        notes.append(note)
+
+    conn.close()
+    return jsonify(notes)
+
+@app.route('/api/notes/<int:note_id>', methods=['GET'])
+def get_note(note_id):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Get note details
+    cursor.execute('SELECT * FROM notes WHERE id=?', (note_id,))
+    note = cursor.fetchone()
+
+    if not note:
+        conn.close()
+        return jsonify({'message': 'Note not found'}), 404
+
+    note = dict(note)
+
+    # Get tags
+    cursor.execute('SELECT tag FROM note_tags WHERE note_id=?', (note_id,))
+    note['tags'] = [row['tag'] for row in cursor.fetchall()]
+
+    # Get attachments
+    cursor.execute('SELECT * FROM note_attachments WHERE note_id=?', (note_id,))
+    note['attachments'] = [dict(row) for row in cursor.fetchall()]
+
+    # Get linked notes
+    cursor.execute('''
+        SELECT n.id, n.title
+        FROM notes n
+        JOIN note_links nl ON n.id = nl.target_note_id
+        WHERE nl.source_note_id=?
+    ''', (note_id,))
+    note['linked_notes'] = [dict(row) for row in cursor.fetchall()]
+
+    conn.close()
+    return jsonify(note)
+
+@app.route('/api/notes', methods=['POST'])
+def create_note():
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Create note
+    cursor.execute(
+        'INSERT INTO notes (title, content, task_id) VALUES (?, ?, ?)',
+        (data['title'], data.get('content', ''), data.get('task_id'))
+    )
+    note_id = cursor.lastrowid
+
+    # Add tags
+    if data.get('tags'):
+        for tag in data['tags']:
+            cursor.execute(
+                'INSERT INTO note_tags (note_id, tag) VALUES (?, ?)',
+                (note_id, tag)
+            )
+
+    # Create initial version
+    cursor.execute(
+        'INSERT INTO note_versions (note_id, title, content, version_number) VALUES (?, ?, ?, ?)',
+        (note_id, data['title'], data.get('content', ''), 1)
+    )
+
+    # Add internal links
+    if data.get('linked_note_ids'):
+        for target_id in data['linked_note_ids']:
+            cursor.execute(
+                'INSERT INTO note_links (source_note_id, target_note_id) VALUES (?, ?)',
+                (note_id, target_id)
+            )
+
+    conn.commit()
+    conn.close()
+    return jsonify({'id': note_id, 'message': 'Note created'}), 201
+
+@app.route('/api/notes/<int:note_id>', methods=['PUT'])
+def update_note(note_id):
+    data = request.json
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Get current version number
+    cursor.execute('SELECT COUNT(*) as count FROM note_versions WHERE note_id=?', (note_id,))
+    version_count = cursor.fetchone()['count']
+    new_version = version_count + 1
+
+    # Update note
+    cursor.execute(
+        'UPDATE notes SET title=?, content=?, task_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        (data['title'], data.get('content', ''), data.get('task_id'), note_id)
+    )
+
+    # Update tags - delete old ones and insert new ones
+    cursor.execute('DELETE FROM note_tags WHERE note_id=?', (note_id,))
+    if data.get('tags'):
+        for tag in data['tags']:
+            cursor.execute(
+                'INSERT INTO note_tags (note_id, tag) VALUES (?, ?)',
+                (note_id, tag)
+            )
+
+    # Create new version
+    cursor.execute(
+        'INSERT INTO note_versions (note_id, title, content, version_number) VALUES (?, ?, ?, ?)',
+        (note_id, data['title'], data.get('content', ''), new_version)
+    )
+
+    # Update internal links
+    cursor.execute('DELETE FROM note_links WHERE source_note_id=?', (note_id,))
+    if data.get('linked_note_ids'):
+        for target_id in data['linked_note_ids']:
+            cursor.execute(
+                'INSERT INTO note_links (source_note_id, target_note_id) VALUES (?, ?)',
+                (note_id, target_id)
+            )
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Note updated', 'version': new_version})
+
+@app.route('/api/notes/<int:note_id>', methods=['DELETE'])
+def delete_note(note_id):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Delete note (cascade will handle tags, versions, attachments, links)
+    cursor.execute('DELETE FROM notes WHERE id=?', (note_id,))
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Note deleted'})
+
+@app.route('/api/notes/<int:note_id>/versions', methods=['GET'])
+def get_note_versions(note_id):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'SELECT * FROM note_versions WHERE note_id=? ORDER BY version_number DESC',
+        (note_id,)
+    )
+    versions = [dict(row) for row in cursor.fetchall()]
+
+    conn.close()
+    return jsonify(versions)
+
+@app.route('/api/notes/<int:note_id>/restore-version/<int:version_number>', methods=['POST'])
+def restore_note_version(note_id, version_number):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Get the version
+    cursor.execute(
+        'SELECT * FROM note_versions WHERE note_id=? AND version_number=?',
+        (note_id, version_number)
+    )
+    version = cursor.fetchone()
+
+    if not version:
+        conn.close()
+        return jsonify({'message': 'Version not found'}), 404
+
+    # Get current version count
+    cursor.execute('SELECT COUNT(*) as count FROM note_versions WHERE note_id=?', (note_id,))
+    version_count = cursor.fetchone()['count']
+    new_version = version_count + 1
+
+    # Update note with version content
+    cursor.execute(
+        'UPDATE notes SET title=?, content=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        (version['title'], version['content'], note_id)
+    )
+
+    # Create new version entry for the restore
+    cursor.execute(
+        'INSERT INTO note_versions (note_id, title, content, version_number) VALUES (?, ?, ?, ?)',
+        (note_id, version['title'], version['content'], new_version)
+    )
+
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Version restored', 'version': new_version})
+
+@app.route('/api/notes/tags', methods=['GET'])
+def get_all_tags():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT DISTINCT tag FROM note_tags ORDER BY tag')
+    tags = [row['tag'] for row in cursor.fetchall()]
+
+    conn.close()
+    return jsonify(tags)
+
+@app.route('/api/notes/<int:note_id>/attachments', methods=['POST'])
+def upload_attachment(note_id):
+    if 'file' not in request.files:
+        return jsonify({'message': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'message': 'No file selected'}), 400
+
+    # Create uploads directory if it doesn't exist
+    upload_dir = os.path.join('static', 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Save file
+    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    filepath = os.path.join(upload_dir, filename)
+    file.save(filepath)
+
+    # Get file info
+    file_size = os.path.getsize(filepath)
+    file_type = file.content_type
+
+    # Save to database
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO note_attachments (note_id, filename, filepath, file_type, file_size) VALUES (?, ?, ?, ?, ?)',
+        (note_id, file.filename, filepath, file_type, file_size)
+    )
+    attachment_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'id': attachment_id,
+        'filename': file.filename,
+        'filepath': filepath,
+        'message': 'File uploaded successfully'
+    }), 201
+
+@app.route('/api/notes/<int:note_id>/attachments/<int:attachment_id>', methods=['DELETE'])
+def delete_attachment(note_id, attachment_id):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Get attachment info
+    cursor.execute('SELECT * FROM note_attachments WHERE id=? AND note_id=?', (attachment_id, note_id))
+    attachment = cursor.fetchone()
+
+    if not attachment:
+        conn.close()
+        return jsonify({'message': 'Attachment not found'}), 404
+
+    # Delete file from filesystem
+    if os.path.exists(attachment['filepath']):
+        os.remove(attachment['filepath'])
+
+    # Delete from database
+    cursor.execute('DELETE FROM note_attachments WHERE id=?', (attachment_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'message': 'Attachment deleted'})
 
 if __name__ == '__main__':
     init_db()
