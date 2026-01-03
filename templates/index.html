@@ -16,7 +16,7 @@
                 <button onclick="showView('dashboard')" class="nav-btn">Dashboard</button>
                 <button onclick="showView('todo')" class="nav-btn active">Todo List</button>
                 <button onclick="showView('kanban')" class="nav-btn">Kanban</button>
-                <button onclick="showView('credentials')" class="nav-btn">🔐 Server Credentials</button>
+                <button onclick="showView('credentials')" class="nav-btn">Server Credentials</button>
             </div>
         </nav>
 
@@ -92,7 +92,7 @@
                     <div class="stat-label">Avg Time/Task</div>
                 </div>
             </div>
-            
+
             <div class="charts-container">
                 <div class="chart-card">
                     <h3>📈 Tasks Created - Last 7 Days</h3>
@@ -151,19 +151,19 @@
                 </div>
                 <form id="task-form" onsubmit="saveTask(event)">
                     <input type="hidden" id="task-id">
-                    
+
                     <div class="form-section">
                         <div class="form-group-full">
                             <label>Task Title *</label>
                             <input type="text" id="task-title" required placeholder="Enter task title">
                         </div>
-                        
+
                         <div class="form-group-full">
                             <label>Description</label>
                             <textarea id="task-description" rows="3" placeholder="Add task description (optional)"></textarea>
                         </div>
                     </div>
-                    
+
                     <div class="form-section">
                         <div class="form-row-2">
                             <div class="form-group">
@@ -175,7 +175,7 @@
                                 <input type="date" id="task-due-date">
                             </div>
                         </div>
-                        
+
                         <div class="form-row-2">
                             <div class="form-group">
                                 <label>📁 Project</label>
@@ -191,7 +191,7 @@
                                 </select>
                             </div>
                         </div>
-                        
+
                         <div class="form-row-2">
                             <div class="form-group">
                                 <label>📊 Status</label>
@@ -204,7 +204,7 @@
                             <div class="form-group"></div>
                         </div>
                     </div>
-                    
+
                     <div class="modal-actions">
                         <button type="button" onclick="closeModal()" class="btn-secondary">Cancel</button>
                         <button type="submit" class="btn-primary">Save Task</button>
@@ -223,30 +223,30 @@
                 </div>
                 <form id="credential-form" onsubmit="saveCredential(event)">
                     <input type="hidden" id="credential-id">
-                    
+
                     <div class="form-section">
                         <div class="form-group-full">
                             <label>Title *</label>
                             <input type="text" id="credential-title" required placeholder="e.g., Production Server">
                         </div>
-                        
+
                         <div class="form-group-full">
                             <label>📁 Project</label>
                             <input type="text" id="credential-project" list="credential-project-list" placeholder="Select or type project name">
                             <datalist id="credential-project-list"></datalist>
                         </div>
-                        
+
                         <div class="form-group-full">
                             <label>IP Address *</label>
                             <input type="text" id="credential-ip" required placeholder="e.g., 192.168.1.100">
                         </div>
-                        
+
                         <div class="form-group-full">
                             <label>Password *</label>
                             <input type="password" id="credential-password" required placeholder="Enter password">
                         </div>
                     </div>
-                    
+
                     <div class="modal-actions">
                         <button type="button" onclick="closeCredentialModal()" class="btn-secondary">Cancel</button>
                         <button type="submit" class="btn-primary">Save Credential</button>

@@ -920,16 +920,11 @@ function applyFilters() {
     if (currentView && currentView.id === 'dashboard-view') {
         loadDashboard();
     }
-}
 
-function clearFilters() {
-    document.getElementById('filter-search').value = '';
-    document.getElementById('filter-project').value = '';
-    document.getElementById('filter-priority').value = '';
-    document.getElementById('filter-status').value = '';
-    document.getElementById('filter-date-from').value = '';
-    document.getElementById('filter-date-to').value = '';
-    applyFilters();
+    // Re-render credentials if it's the current view
+    if (currentView && currentView.id === 'credentials-view') {
+        renderCredentials();
+    }
 }
 
 // Close modal when clicking outside
@@ -978,17 +973,45 @@ function populateCredentialProjectList() {
     }
 }
 
+// Get filtered credentials
+function getFilteredCredentials() {
+    let filtered = [...credentials];
+
+    // Filter by search (title)
+    const searchTerm = document.getElementById('filter-search').value.toLowerCase();
+    if (searchTerm) {
+        filtered = filtered.filter(cred =>
+            cred.title.toLowerCase().includes(searchTerm) ||
+            cred.ip.toLowerCase().includes(searchTerm)
+        );
+    }
+
+    // Filter by project
+    const projectFilter = document.getElementById('filter-project').value;
+    if (projectFilter) {
+        filtered = filtered.filter(cred => cred.project === projectFilter);
+    }
+
+    return filtered;
+}
+
 // Render credentials list
 function renderCredentials() {
     const credentialsList = document.getElementById('credentials-list');
     credentialsList.innerHTML = '';
 
-    if (credentials.length === 0) {
-        credentialsList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">No credentials saved yet.</p>';
+    const filteredCredentials = getFilteredCredentials();
+
+    if (filteredCredentials.length === 0) {
+        if (credentials.length === 0) {
+            credentialsList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">No credentials saved yet.</p>';
+        } else {
+            credentialsList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">No credentials match the current filters.</p>';
+        }
         return;
     }
 
-    credentials.forEach(credential => {
+    filteredCredentials.forEach(credential => {
         const card = document.createElement('div');
         card.className = 'credential-card';
         card.innerHTML = `
