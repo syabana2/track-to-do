@@ -59,7 +59,13 @@ function showView(viewName) {
     document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
 
     document.getElementById(`${viewName}-view`).style.display = 'block';
-    event.target.classList.add('active');
+    if (window.event) {
+        window.event.target.classList.add('active');
+    } else {
+        // Fallback for when called programmatically or if event is missing
+        const btn = document.querySelector(`button[onclick="showView('${viewName}')"]`);
+        if (btn) btn.classList.add('active');
+    }
 
     // Hide/show global filters based on view
     const filtersContainer = document.querySelector('.filters-container');
@@ -67,6 +73,15 @@ function showView(viewName) {
         filtersContainer.style.display = 'none';
     } else {
         filtersContainer.style.display = 'grid';
+    }
+
+    // Hide search filter specifically for Dashboard
+    const searchFilterInput = document.getElementById('filter-search');
+    if (searchFilterInput) {
+        const searchGroup = searchFilterInput.closest('.filter-group');
+        if (searchGroup) {
+            searchGroup.style.display = viewName === 'dashboard' ? 'none' : 'block';
+        }
     }
 
     if (viewName === 'dashboard') {
@@ -207,27 +222,34 @@ function renderTodoList() {
 
 function groupTasksByDate(tasks) {
     const groups = {};
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
     tasks.forEach(task => {
-        let dateKey = 'No Date';
+        let dateKey = 'No Due Date';
 
-        if (task.created_at) {
-            const createdDate = new Date(task.created_at);
-            const today = new Date();
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-
-            // Reset time to compare only dates
-            today.setHours(0, 0, 0, 0);
-            yesterday.setHours(0, 0, 0, 0);
-            createdDate.setHours(0, 0, 0, 0);
-
-            if (createdDate.getTime() === today.getTime()) {
-                dateKey = '📅 Created Today';
-            } else if (createdDate.getTime() === yesterday.getTime()) {
-                dateKey = '📅 Created Yesterday';
+        if (task.due_date) {
+            let dueDate;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(task.due_date)) {
+                const [y, m, d] = task.due_date.split('-').map(Number);
+                dueDate = new Date(y, m - 1, d);
             } else {
-                dateKey = '📅 Created on ' + formatDate(task.created_at);
+                dueDate = new Date(task.due_date);
+                dueDate.setHours(0, 0, 0, 0);
+            }
+
+            if (task.status !== 'done' && dueDate < today) {
+                dateKey = '🔴 Overdue';
+            } else if (dueDate.getTime() === today.getTime()) {
+                dateKey = '📅 Today';
+            } else if (dueDate.getTime() === tomorrow.getTime()) {
+                dateKey = '📅 Tomorrow';
+            } else {
+                // Use formatted date for display (e.g., "Sun, Jan 4")
+                dateKey = formatDate(task.due_date);
             }
         }
 
@@ -385,48 +407,162 @@ async function handleDrop(e, newStatus) {
 // Load Dashboard stats
 async function loadDashboard() {
     try {
-        const response = await fetch('/api/dashboard/stats');
-        const stats = await response.json();
+        // Still fetch basic stats for the summary cards if needed, or calculate everything client-side
+        // For summary cards, we want to respect the filters too.
+        
+        const filteredTasks = getFilteredTasks(); // Project/Priority/Status filtered (Date IGNORED on Dashboard)
+        
+        // --- Prepare Tasks for Summary Cards (Apply Date Filter based on Created At) ---
+        let cardTasks = filteredTasks;
+        const dateFrom = document.getElementById('filter-date-from')?.value;
+        const dateTo = document.getElementById('filter-date-to')?.value;
 
-        // Apply filters to stats
-        const filteredTasks = getFilteredTasks();
-        const filteredStatusCounts = {
-            'todo': filteredTasks.filter(t => t.status === 'todo').length,
-            'in-progress': filteredTasks.filter(t => t.status === 'in-progress').length,
-            'done': filteredTasks.filter(t => t.status === 'done').length
+        if (dateFrom || dateTo) {
+            cardTasks = cardTasks.filter(task => {
+                const createdDate = task.created_at ? task.created_at.split(' ')[0] : '';
+                
+                if (dateFrom && (!createdDate || createdDate < dateFrom)) return false;
+                if (dateTo && (!createdDate || createdDate > dateTo)) return false;
+                
+                return true;
+            });
+        }
+        
+        // Calculate Summary Stats from cardTasks
+        const statusCounts = {
+            'todo': cardTasks.filter(t => t.status === 'todo').length,
+            'in-progress': cardTasks.filter(t => t.status === 'in-progress').length,
+            'done': cardTasks.filter(t => t.status === 'done').length
         };
 
-        const filteredTotalTime = filteredTasks.reduce((sum, t) => sum + (t.time_spent || 0), 0);
-        const tasksWithTime = filteredTasks.filter(t => t.time_spent > 0);
-        const filteredAvgTime = tasksWithTime.length > 0
+        const totalTime = cardTasks.reduce((sum, t) => sum + (t.time_spent || 0), 0);
+        const tasksWithTime = cardTasks.filter(t => t.time_spent > 0);
+        const avgTime = tasksWithTime.length > 0
             ? tasksWithTime.reduce((sum, t) => sum + t.time_spent, 0) / tasksWithTime.length
             : 0;
 
+        // For "Completed Today", it's a specific daily stat, usually unrelated to Due Date filter, 
+        // but for consistency with "Filtered Dashboard", maybe we keep it as "from the filtered set"?
+        // Actually "Completed Today" is a hardcoded "Today". 
+        // Let's use cardTasks to be consistent (e.g. if I filter Project A, I want Completed Today for Project A).
         const today = new Date().toISOString().split('T')[0];
-        const filteredCompletedToday = filteredTasks.filter(t =>
+        const completedToday = cardTasks.filter(t =>
             t.completed_at && t.completed_at.startsWith(today)
         ).length;
 
-        document.getElementById('stat-todo').textContent = filteredStatusCounts.todo;
-        document.getElementById('stat-in-progress').textContent = filteredStatusCounts['in-progress'];
-        document.getElementById('stat-done').textContent = filteredStatusCounts.done;
-        document.getElementById('stat-completed-today').textContent = filteredCompletedToday;
-        document.getElementById('stat-total-time').textContent = formatTime(filteredTotalTime);
-        document.getElementById('stat-avg-time').textContent = formatTime(Math.round(filteredAvgTime));
+        // Update Summary Cards
+        document.getElementById('stat-todo').textContent = statusCounts.todo;
+        document.getElementById('stat-in-progress').textContent = statusCounts['in-progress'];
+        document.getElementById('stat-done').textContent = statusCounts.done;
+        document.getElementById('stat-completed-today').textContent = completedToday;
+        document.getElementById('stat-total-time').textContent = formatTime(totalTime);
+        document.getElementById('stat-avg-time').textContent = formatTime(Math.round(avgTime));
 
-        // Render charts with filtered data
-        const filteredDailyCreated = filterDailyData(stats.daily_created, filteredTasks);
-        const filteredDailyCompletion = filterDailyData(stats.daily_completion, filteredTasks);
+        // --- Chart Data Preparation ---
+        // Charts use the full filtered list (by Project/Priority) mapped against the selected Date Range
+        
+        // 1. Determine Date Range
+        const dateRange = getDashboardDateRange();
+        
+        // 2. Calculate Daily Counts from filteredTasks (NOT cardTasks, as we want to show activity over the selected range)
+        const dailyCreatedData = calculateDailyCreated(filteredTasks);
+        const dailyCompletedData = calculateDailyCompleted(filteredTasks);
 
-        renderTasksCreatedChart(filteredDailyCreated);
-        renderTasksCompletedChart(filteredDailyCompletion);
+        // 3. Render Charts
+        renderTasksCreatedChart(dateRange, dailyCreatedData);
+        renderTasksCompletedChart(dateRange, dailyCompletedData);
+
     } catch (error) {
         console.error('Error loading dashboard:', error);
     }
 }
 
+function getDashboardDateRange() {
+    const dateFrom = document.getElementById('filter-date-from')?.value;
+    const dateTo = document.getElementById('filter-date-to')?.value;
+
+    if (dateFrom && dateTo) {
+        // Append Time to force Local Time construction
+        return getDatesInRange(new Date(dateFrom + 'T00:00:00'), new Date(dateTo + 'T00:00:00'));
+    } else if (dateFrom) {
+        return getDatesInRange(new Date(dateFrom + 'T00:00:00'), new Date());
+    } else if (dateTo) {
+        const end = new Date(dateTo + 'T00:00:00');
+        const start = new Date(end);
+        start.setDate(start.getDate() - 6);
+        return getDatesInRange(start, end);
+    } else {
+        // Default: Last 7 days
+        return getLast7Days().reverse(); 
+    }
+}
+
+function getDatesInRange(startDate, endDate) {
+    const dates = [];
+    let currentDate = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Normalize to start of day in Local Time
+    currentDate.setHours(0,0,0,0);
+    end.setHours(0,0,0,0);
+
+    while (currentDate <= end) {
+        dates.push(formatDateToLocalYMD(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+    return dates;
+}
+
+function formatDateToLocalYMD(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function calculateDailyCreated(tasks) {
+    // Returns array of { date: 'YYYY-MM-DD', priority: 'high', count: 1 }
+    const result = [];
+    const counts = {}; // key: date|priority
+
+    tasks.forEach(task => {
+        if (!task.created_at) return;
+        const date = task.created_at.split(' ')[0]; // Assumes YYYY-MM-DD HH:MM:SS format
+        const priority = task.priority || 'medium';
+        const key = `${date}|${priority}`;
+        
+        counts[key] = (counts[key] || 0) + 1;
+    });
+
+    for (const key in counts) {
+        const [date, priority] = key.split('|');
+        result.push({ date, priority, count: counts[key] });
+    }
+    return result;
+}
+
+function calculateDailyCompleted(tasks) {
+    const result = [];
+    const counts = {};
+
+    tasks.forEach(task => {
+        if (!task.completed_at) return;
+        const date = task.completed_at.split(' ')[0];
+        const priority = task.priority || 'medium';
+        const key = `${date}|${priority}`;
+        
+        counts[key] = (counts[key] || 0) + 1;
+    });
+
+    for (const key in counts) {
+        const [date, priority] = key.split('|');
+        result.push({ date, priority, count: counts[key] });
+    }
+    return result;
+}
+
 // Render Tasks Created Chart
-function renderTasksCreatedChart(dailyData) {
+function renderTasksCreatedChart(labels, dailyData) {
     const ctx = document.getElementById('tasks-created-chart');
     if (!ctx) return;
 
@@ -435,8 +571,6 @@ function renderTasksCreatedChart(dailyData) {
         tasksCreatedChart.destroy();
     }
 
-    // Prepare data for last 7 days
-    const last7Days = getLast7Days();
     const priorities = ['high', 'medium', 'low'];
     const datasets = [];
 
@@ -453,7 +587,7 @@ function renderTasksCreatedChart(dailyData) {
     };
 
     priorities.forEach(priority => {
-        const data = last7Days.map(date => {
+        const data = labels.map(date => {
             const found = dailyData.find(d => d.date === date && d.priority === priority);
             return found ? found.count : 0;
         });
@@ -473,7 +607,7 @@ function renderTasksCreatedChart(dailyData) {
     tasksCreatedChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: last7Days.map(d => formatChartDate(d)),
+            labels: labels.map(d => formatChartDate(d)),
             datasets: datasets
         },
         options: {
@@ -526,7 +660,7 @@ function renderTasksCreatedChart(dailyData) {
 }
 
 // Render Tasks Completed Chart
-function renderTasksCompletedChart(dailyData) {
+function renderTasksCompletedChart(labels, dailyData) {
     const ctx = document.getElementById('tasks-completed-chart');
     if (!ctx) return;
 
@@ -535,8 +669,6 @@ function renderTasksCompletedChart(dailyData) {
         tasksCompletedChart.destroy();
     }
 
-    // Prepare data for last 7 days
-    const last7Days = getLast7Days();
     const priorities = ['high', 'medium', 'low'];
     const datasets = [];
 
@@ -553,7 +685,7 @@ function renderTasksCompletedChart(dailyData) {
     };
 
     priorities.forEach(priority => {
-        const data = last7Days.map(date => {
+        const data = labels.map(date => {
             const found = dailyData.find(d => d.date === date && d.priority === priority);
             return found ? found.count : 0;
         });
@@ -573,7 +705,7 @@ function renderTasksCompletedChart(dailyData) {
     tasksCompletedChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: last7Days.map(d => formatChartDate(d)),
+            labels: labels.map(d => formatChartDate(d)),
             datasets: datasets
         },
         options: {
@@ -625,38 +757,28 @@ function renderTasksCompletedChart(dailyData) {
     });
 }
 
-// Filter daily data based on current filters
-function filterDailyData(dailyData, filteredTasks) {
-    const filteredTaskIds = new Set(filteredTasks.map(t => t.id));
-    // Since we don't have task IDs in daily data, we filter by priority
-    const projectFilter = document.getElementById('filter-project')?.value || '';
-    const priorityFilter = document.getElementById('filter-priority')?.value || '';
-    const statusFilter = document.getElementById('filter-status')?.value || '';
-
-    if (!projectFilter && !priorityFilter && !statusFilter) {
-        return dailyData;
-    }
-
-    return dailyData.filter(item => {
-        if (priorityFilter && item.priority !== priorityFilter) return false;
-        return true;
-    });
-}
-
 // Get last 7 days in YYYY-MM-DD format
 function getLast7Days() {
     const dates = [];
     for (let i = 6; i >= 0; i--) {
         const date = new Date();
         date.setDate(date.getDate() - i);
-        dates.push(date.toISOString().split('T')[0]);
+        dates.push(formatDateToLocalYMD(date));
     }
-    return dates;
+    return dates.reverse(); // Standardize as [newest, ..., oldest]
 }
 
 // Format date for chart labels
 function formatChartDate(dateString) {
-    const date = new Date(dateString);
+    let date;
+    // Handle YYYY-MM-DD strings explicitly as local time
+    if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const [y, m, d] = dateString.split('-').map(Number);
+        date = new Date(y, m - 1, d);
+    } else {
+        date = new Date(dateString);
+    }
+
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -952,14 +1074,26 @@ function capitalizeFirst(str) {
 
 function formatDate(dateString) {
     if (!dateString) return '';
-    const date = new Date(dateString);
+    let date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const [y, m, d] = dateString.split('-').map(Number);
+        date = new Date(y, m - 1, d);
+    } else {
+        date = new Date(dateString);
+    }
     const options = { weekday: 'short', month: 'short', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
 }
 
 function formatDateShort(dateString) {
     if (!dateString) return '';
-    const date = new Date(dateString);
+    let date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        const [y, m, d] = dateString.split('-').map(Number);
+        date = new Date(y, m - 1, d);
+    } else {
+        date = new Date(dateString);
+    }
     const options = { month: 'short', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
 }
@@ -968,10 +1102,17 @@ function checkIfOverdue(task) {
     if (!task.due_date || task.status === 'done') return false;
 
     const today = new Date();
-    const dueDate = new Date(task.due_date);
-
     today.setHours(0, 0, 0, 0);
-    dueDate.setHours(0, 0, 0, 0);
+
+    let dueDate;
+    // Handle YYYY-MM-DD string explicitly as local date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(task.due_date)) {
+        const [y, m, d] = task.due_date.split('-').map(Number);
+        dueDate = new Date(y, m - 1, d);
+    } else {
+        dueDate = new Date(task.due_date);
+        dueDate.setHours(0, 0, 0, 0);
+    }
 
     return dueDate < today;
 }
@@ -985,9 +1126,13 @@ function getFilteredTasks() {
     const dateFromFilter = document.getElementById('filter-date-from')?.value || '';
     const dateToFilter = document.getElementById('filter-date-to')?.value || '';
 
+    // Check if we are on the dashboard view
+    const dashboardView = document.getElementById('dashboard-view');
+    const isDashboard = dashboardView && dashboardView.style.display !== 'none';
+
     return tasks.filter(task => {
-        // Search filter
-        if (searchFilter && !task.title.toLowerCase().includes(searchFilter)) return false;
+        // Search filter - skip if on dashboard
+        if (!isDashboard && searchFilter && !task.title.toLowerCase().includes(searchFilter)) return false;
 
         // Project filter
         if (projectFilter && task.project !== projectFilter) return false;
@@ -998,12 +1143,16 @@ function getFilteredTasks() {
         // Status filter
         if (statusFilter && task.status !== statusFilter) return false;
 
-        // Date range filter (based on due_date)
-        if (dateFromFilter && task.due_date) {
-            if (task.due_date < dateFromFilter) return false;
-        }
-        if (dateToFilter && task.due_date) {
-            if (task.due_date > dateToFilter) return false;
+        // Date range filter (based on Created At) - skip if on dashboard
+        if (!isDashboard && (dateFromFilter || dateToFilter)) {
+            const createdDate = task.created_at ? task.created_at.split(' ')[0] : '';
+            
+            if (dateFromFilter) {
+                if (!createdDate || createdDate < dateFromFilter) return false;
+            }
+            if (dateToFilter) {
+                if (!createdDate || createdDate > dateToFilter) return false;
+            }
         }
 
         return true;
