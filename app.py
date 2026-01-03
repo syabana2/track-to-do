@@ -1,7 +1,9 @@
+
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime
 import sqlite3
 import os
+import json
 
 app = Flask(__name__)
 DATABASE = 'tracking.db'
@@ -49,6 +51,7 @@ def init_db():
             project TEXT,
             ip TEXT NOT NULL,
             password TEXT NOT NULL,
+            tags TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -111,6 +114,12 @@ def init_db():
             FOREIGN KEY (target_note_id) REFERENCES notes (id) ON DELETE CASCADE
         )
     ''')
+
+    # Migration: Add tags column to server_credentials if it doesn't exist
+    cursor.execute("PRAGMA table_info(server_credentials)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'tags' not in columns:
+        cursor.execute('ALTER TABLE server_credentials ADD COLUMN tags TEXT')
 
     conn.commit()
     conn.close()
@@ -335,7 +344,18 @@ def get_credentials():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM server_credentials ORDER BY created_at DESC')
-    credentials = [dict(row) for row in cursor.fetchall()]
+    credentials = []
+    for row in cursor.fetchall():
+        cred = dict(row)
+        # Parse tags from JSON string
+        if cred.get('tags'):
+            try:
+                cred['tags'] = json.loads(cred['tags'])
+            except:
+                cred['tags'] = []
+        else:
+            cred['tags'] = []
+        credentials.append(cred)
     conn.close()
     return jsonify(credentials)
 
@@ -345,9 +365,12 @@ def create_credential():
     conn = get_db()
     cursor = conn.cursor()
 
+    # Convert tags list to JSON string
+    tags_json = json.dumps(data.get('tags', []))
+
     cursor.execute(
-        'INSERT INTO server_credentials (title, project, ip, password) VALUES (?, ?, ?, ?)',
-        (data['title'], data.get('project', ''), data['ip'], data['password'])
+        'INSERT INTO server_credentials (title, project, ip, password, tags) VALUES (?, ?, ?, ?, ?)',
+        (data['title'], data.get('project', ''), data['ip'], data['password'], tags_json)
     )
 
     conn.commit()
@@ -361,9 +384,12 @@ def update_credential(credential_id):
     conn = get_db()
     cursor = conn.cursor()
 
+    # Convert tags list to JSON string
+    tags_json = json.dumps(data.get('tags', []))
+
     cursor.execute(
-        'UPDATE server_credentials SET title=?, project=?, ip=?, password=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-        (data['title'], data.get('project', ''), data['ip'], data['password'], credential_id)
+        'UPDATE server_credentials SET title=?, project=?, ip=?, password=?, tags=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        (data['title'], data.get('project', ''), data['ip'], data['password'], tags_json, credential_id)
     )
 
     conn.commit()
@@ -379,11 +405,28 @@ def delete_credential(credential_id):
     conn.close()
     return jsonify({'message': 'Credential deleted'})
 
+@app.route('/api/credentials/tags', methods=['GET'])
+def get_all_credential_tags():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT tags FROM server_credentials WHERE tags IS NOT NULL AND tags != ""')
+    all_tags = set()
+    for row in cursor.fetchall():
+        try:
+            tags = json.loads(row['tags'])
+            all_tags.update(tags)
+        except:
+            pass
+
+    conn.close()
+    return jsonify(sorted(list(all_tags)))
+
 @app.route('/api/tasks/active-timers', methods=['GET'])
 def get_active_timers():
     conn = get_db()
     cursor = conn.cursor()
-    
+
     # Get all tasks with active timers
     cursor.execute('''
         SELECT t.id, t.time_spent, tl.start_time,
@@ -393,7 +436,7 @@ def get_active_timers():
         WHERE tl.end_time IS NULL
         ORDER BY tl.start_time DESC
     ''')
-    
+
     active_timers = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(active_timers)

@@ -1074,16 +1074,36 @@ window.onclick = function(event) {
 
 // ========== SERVER CREDENTIALS FUNCTIONS ==========
 
+// Credential tags state
+let credentialSelectedTags = [];
+let credentialFilterSelectedTags = [];
+let allCredentialTags = [];
+let noteSelectedTags = [];
+let noteFilterSelectedTags = [];
+let allNoteTags = [];
+
 // Load credentials from API
 async function loadCredentials() {
     try {
         const response = await fetch('/api/credentials');
         credentials = await response.json();
         await loadProjects(); // Load projects for dropdown
+        await loadAllCredentialTags();
         populateCredentialProjectList();
+        populateCredentialFilters();
         renderCredentials();
     } catch (error) {
         console.error('Error loading credentials:', error);
+    }
+}
+
+// Load all credential tags
+async function loadAllCredentialTags() {
+    try {
+        const response = await fetch('/api/credentials/tags');
+        allCredentialTags = await response.json();
+    } catch (error) {
+        console.error('Error loading credential tags:', error);
     }
 }
 
@@ -1106,12 +1126,27 @@ function populateCredentialProjectList() {
     }
 }
 
+// Populate credential filters
+function populateCredentialFilters() {
+    // Populate project filter
+    const projectFilter = document.getElementById('credentials-project-filter');
+    const projects = [...new Set(credentials.map(c => c.project).filter(p => p))];
+
+    projectFilter.innerHTML = '<option value="">All Projects</option>';
+    projects.sort().forEach(project => {
+        const option = document.createElement('option');
+        option.value = project;
+        option.textContent = `📁 ${project}`;
+        projectFilter.appendChild(option);
+    });
+}
+
 // Get filtered credentials
 function getFilteredCredentials() {
     let filtered = [...credentials];
 
-    // Filter by search (title)
-    const searchTerm = document.getElementById('filter-search').value.toLowerCase();
+    // Filter by search (title or IP)
+    const searchTerm = document.getElementById('credentials-search')?.value.toLowerCase() || '';
     if (searchTerm) {
         filtered = filtered.filter(cred =>
             cred.title.toLowerCase().includes(searchTerm) ||
@@ -1120,12 +1155,202 @@ function getFilteredCredentials() {
     }
 
     // Filter by project
-    const projectFilter = document.getElementById('filter-project').value;
+    const projectFilter = document.getElementById('credentials-project-filter')?.value || '';
     if (projectFilter) {
         filtered = filtered.filter(cred => cred.project === projectFilter);
     }
 
+    // Filter by tags (multi-select - credential must have ALL selected tags)
+    if (credentialFilterSelectedTags.length > 0) {
+        filtered = filtered.filter(cred => {
+            if (!cred.tags || cred.tags.length === 0) return false;
+            return credentialFilterSelectedTags.every(tag => cred.tags.includes(tag));
+        });
+    }
+
     return filtered;
+}
+
+// Apply credential filters
+function applyCredentialFilters() {
+    renderCredentials();
+}
+
+// Clear credential filters
+function clearCredentialFilters() {
+    document.getElementById('credentials-search').value = '';
+    document.getElementById('credentials-project-filter').value = '';
+    document.getElementById('credentials-filter-tag-input').value = '';
+    credentialFilterSelectedTags = [];
+    renderCredentialFilterTags();
+    renderCredentials();
+}
+
+// Handle credential tag input
+function handleCredentialTagInput(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        const input = event.target;
+        const tag = input.value.trim();
+
+        if (tag && !credentialSelectedTags.includes(tag)) {
+            credentialSelectedTags.push(tag);
+            renderCredentialTags();
+            input.value = '';
+            hideCredentialTagSuggestions();
+        }
+    }
+}
+
+// Show credential tag suggestions
+function showCredentialTagSuggestions(event) {
+    const input = event.target;
+    const value = input.value.trim().toLowerCase();
+    const suggestionsContainer = document.getElementById('credential-tag-suggestions');
+
+    if (!value) {
+        suggestionsContainer.classList.remove('active');
+        return;
+    }
+
+    // Filter tags that match and are not already selected
+    const suggestions = allCredentialTags.filter(tag =>
+        tag.toLowerCase().includes(value) &&
+        !credentialSelectedTags.includes(tag)
+    );
+
+    if (suggestions.length === 0) {
+        suggestionsContainer.classList.remove('active');
+        return;
+    }
+
+    // Render suggestions
+    suggestionsContainer.innerHTML = suggestions.map(tag =>
+        `<div class="tag-suggestion-item" onclick="selectCredentialTag('${tag}')">${tag}</div>`
+    ).join('');
+    suggestionsContainer.classList.add('active');
+}
+
+// Hide credential tag suggestions
+function hideCredentialTagSuggestions() {
+    const suggestionsContainer = document.getElementById('credential-tag-suggestions');
+    suggestionsContainer.classList.remove('active');
+}
+
+// Select credential tag from suggestions
+function selectCredentialTag(tag) {
+    if (!credentialSelectedTags.includes(tag)) {
+        credentialSelectedTags.push(tag);
+        renderCredentialTags();
+    }
+    document.getElementById('credential-tag-input').value = '';
+    hideCredentialTagSuggestions();
+}
+
+// Render credential tags
+function renderCredentialTags() {
+    const container = document.getElementById('credential-selected-tags');
+    container.innerHTML = '';
+
+    credentialSelectedTags.forEach(tag => {
+        const tagEl = document.createElement('div');
+        tagEl.className = 'tag-item';
+        tagEl.innerHTML = `
+            <span>${tag}</span>
+            <span class="tag-remove" onclick="removeCredentialTag('${tag}')">&times;</span>
+        `;
+        container.appendChild(tagEl);
+    });
+
+    // Update hidden input
+    document.getElementById('credential-tags').value = JSON.stringify(credentialSelectedTags);
+}
+
+// Remove credential tag
+function removeCredentialTag(tag) {
+    credentialSelectedTags = credentialSelectedTags.filter(t => t !== tag);
+    renderCredentialTags();
+}
+
+// Credential filter tag functions
+function renderCredentialFilterTags() {
+    const container = document.getElementById('credentials-filter-selected-tags');
+    if (!container) return;
+
+    container.innerHTML = '';
+    credentialFilterSelectedTags.forEach(tag => {
+        const tagEl = document.createElement('div');
+        tagEl.className = 'tag-item';
+        tagEl.innerHTML = `
+            <span>${tag}</span>
+            <span class="tag-remove" onclick="removeCredentialFilterTag('${tag}')">&times;</span>
+        `;
+        container.appendChild(tagEl);
+    });
+}
+
+function removeCredentialFilterTag(tag) {
+    credentialFilterSelectedTags = credentialFilterSelectedTags.filter(t => t !== tag);
+    renderCredentialFilterTags();
+    applyCredentialFilters();
+}
+
+// Setup credential filter tag input
+document.addEventListener('DOMContentLoaded', () => {
+    const filterInput = document.getElementById('credentials-filter-tag-input');
+    const filterSuggestions = document.getElementById('credentials-filter-tag-suggestions');
+
+    if (filterInput) {
+        filterInput.addEventListener('input', (e) => {
+            const value = e.target.value.trim().toLowerCase();
+
+            if (!value) {
+                filterSuggestions.classList.remove('active');
+                return;
+            }
+
+            const suggestions = allCredentialTags.filter(tag =>
+                tag.toLowerCase().includes(value) &&
+                !credentialFilterSelectedTags.includes(tag)
+            );
+
+            if (suggestions.length === 0) {
+                filterSuggestions.classList.remove('active');
+                return;
+            }
+
+            filterSuggestions.innerHTML = suggestions.map(tag =>
+                `<div class="tag-suggestion-item" onclick="addCredentialFilterTag('${tag}')">${tag}</div>`
+            ).join('');
+            filterSuggestions.classList.add('active');
+        });
+
+        filterInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const tag = e.target.value.trim();
+                if (tag) {
+                    addCredentialFilterTag(tag);
+                }
+            }
+        });
+    }
+});
+
+function addCredentialFilterTag(tag) {
+    if (!credentialFilterSelectedTags.includes(tag)) {
+        credentialFilterSelectedTags.push(tag);
+        renderCredentialFilterTags();
+        applyCredentialFilters();
+    }
+    const filterInput = document.getElementById('credentials-filter-tag-input');
+    if (filterInput) {
+        filterInput.value = '';
+    }
+    const filterSuggestions = document.getElementById('credentials-filter-tag-suggestions');
+    if (filterSuggestions) {
+        filterSuggestions.classList.remove('active');
+    }
 }
 
 // Render credentials list
@@ -1147,11 +1372,20 @@ function renderCredentials() {
     filteredCredentials.forEach(credential => {
         const card = document.createElement('div');
         card.className = 'credential-card';
+
+        // Tags HTML
+        const tagsHtml = credential.tags && credential.tags.length > 0 ?
+            `<div class="credential-tags">${credential.tags.map(tag => `<span class="credential-tag">🏷️ ${tag}</span>`).join('')}</div>` :
+            '';
+
         card.innerHTML = `
             <div class="credential-header">
                 <div>
                     <div class="credential-title">${credential.title}</div>
-                    ${credential.project ? `<span class="credential-project">📁 ${credential.project}</span>` : ''}
+                    <div class="credential-meta">
+                        ${credential.project ? `<span class="credential-project">📁 ${credential.project}</span>` : ''}
+                    </div>
+                    ${tagsHtml}
                 </div>
                 <div class="credential-actions">
                     <button class="btn-edit" onclick="editCredential(${credential.id})" title="Edit">✏️</button>
@@ -1191,6 +1425,8 @@ function openAddCredentialModal() {
     document.getElementById('credential-modal-title').textContent = 'Add Server Credential';
     document.getElementById('credential-form').reset();
     document.getElementById('credential-id').value = '';
+    credentialSelectedTags = [];
+    renderCredentialTags();
     document.getElementById('credential-modal').style.display = 'block';
 }
 
@@ -1208,7 +1444,8 @@ async function saveCredential(event) {
         title: document.getElementById('credential-title').value,
         project: document.getElementById('credential-project').value,
         ip: document.getElementById('credential-ip').value,
-        password: document.getElementById('credential-password').value
+        password: document.getElementById('credential-password').value,
+        tags: credentialSelectedTags
     };
 
     try {
@@ -1261,6 +1498,10 @@ function editCredential(id) {
     document.getElementById('credential-project').value = credential.project || '';
     document.getElementById('credential-ip').value = credential.ip;
     document.getElementById('credential-password').value = credential.password;
+
+    // Set tags
+    credentialSelectedTags = credential.tags || [];
+    renderCredentialTags();
 
     document.getElementById('credential-modal').style.display = 'block';
 }
@@ -1669,10 +1910,21 @@ async function loadNotes() {
         const response = await fetch('/api/notes');
         notes = await response.json();
         allNotes = [...notes];
+        await loadAllNoteTags();
         renderNotes();
         populateNotesFilters();
     } catch (error) {
         console.error('Error loading notes:', error);
+    }
+}
+
+// Load all note tags
+async function loadAllNoteTags() {
+    try {
+        const response = await fetch('/api/notes/tags');
+        allNoteTags = await response.json();
+    } catch (error) {
+        console.error('Error loading note tags:', error);
     }
 }
 
@@ -1725,7 +1977,6 @@ function renderNotes() {
 // Filter notes
 function filterNotes() {
     const searchTerm = document.getElementById('notes-search').value.toLowerCase();
-    const tagFilter = document.getElementById('notes-tag-filter').value;
     const taskFilter = document.getElementById('notes-task-filter').value;
 
     notes = allNotes.filter(note => {
@@ -1733,13 +1984,15 @@ function filterNotes() {
             note.title.toLowerCase().includes(searchTerm) ||
             (note.content && note.content.toLowerCase().includes(searchTerm));
 
-        const matchesTag = !tagFilter || (note.tags && note.tags.includes(tagFilter));
+        // Filter by tags (multi-select - note must have ALL selected tags)
+        const matchesTags = noteFilterSelectedTags.length === 0 ||
+            (note.tags && noteFilterSelectedTags.every(tag => note.tags.includes(tag)));
 
         const matchesTask = !taskFilter ||
             (taskFilter === 'no-task' && !note.task_id) ||
             (note.task_id && note.task_id.toString() === taskFilter);
 
-        return matchesSearch && matchesTag && matchesTask;
+        return matchesSearch && matchesTags && matchesTask;
     });
 
     renderNotes();
@@ -1747,18 +2000,6 @@ function filterNotes() {
 
 // Populate notes filters
 function populateNotesFilters() {
-    // Populate tags filter
-    const tagFilter = document.getElementById('notes-tag-filter');
-    const allTags = [...new Set(allNotes.flatMap(note => note.tags || []))];
-
-    tagFilter.innerHTML = '<option value="">All Tags</option>';
-    allTags.forEach(tag => {
-        const option = document.createElement('option');
-        option.value = tag;
-        option.textContent = tag;
-        tagFilter.appendChild(option);
-    });
-
     // Populate task filter
     const taskFilter = document.getElementById('notes-task-filter');
     taskFilter.innerHTML = '<option value="">All Tasks</option><option value="no-task">No Task</option>';
@@ -1769,6 +2010,167 @@ function populateNotesFilters() {
         option.textContent = task.title;
         taskFilter.appendChild(option);
     });
+}
+
+// Note filter tag functions
+function renderNoteFilterTags() {
+    const container = document.getElementById('notes-filter-selected-tags');
+    if (!container) return;
+
+    container.innerHTML = '';
+    noteFilterSelectedTags.forEach(tag => {
+        const tagEl = document.createElement('div');
+        tagEl.className = 'tag-item';
+        tagEl.innerHTML = `
+            <span>${tag}</span>
+            <span class="tag-remove" onclick="removeNoteFilterTag('${tag}')">&times;</span>
+        `;
+        container.appendChild(tagEl);
+    });
+}
+
+function removeNoteFilterTag(tag) {
+    noteFilterSelectedTags = noteFilterSelectedTags.filter(t => t !== tag);
+    renderNoteFilterTags();
+    filterNotes();
+}
+
+function addNoteFilterTag(tag) {
+    if (!noteFilterSelectedTags.includes(tag)) {
+        noteFilterSelectedTags.push(tag);
+        renderNoteFilterTags();
+        filterNotes();
+    }
+    const filterInput = document.getElementById('notes-filter-tag-input');
+    if (filterInput) {
+        filterInput.value = '';
+    }
+    const filterSuggestions = document.getElementById('notes-filter-tag-suggestions');
+    if (filterSuggestions) {
+        filterSuggestions.classList.remove('active');
+    }
+}
+
+// Setup note filter tag input (event listener will be attached on page load)
+document.addEventListener('DOMContentLoaded', () => {
+    const filterInput = document.getElementById('notes-filter-tag-input');
+    const filterSuggestions = document.getElementById('notes-filter-tag-suggestions');
+
+    if (filterInput) {
+        filterInput.addEventListener('input', (e) => {
+            const value = e.target.value.trim().toLowerCase();
+
+            if (!value) {
+                filterSuggestions.classList.remove('active');
+                return;
+            }
+
+            const suggestions = allNoteTags.filter(tag =>
+                tag.toLowerCase().includes(value) &&
+                !noteFilterSelectedTags.includes(tag)
+            );
+
+            if (suggestions.length === 0) {
+                filterSuggestions.classList.remove('active');
+                return;
+            }
+
+            filterSuggestions.innerHTML = suggestions.map(tag =>
+                `<div class="tag-suggestion-item" onclick="addNoteFilterTag('${tag}')">${tag}</div>`
+            ).join('');
+            filterSuggestions.classList.add('active');
+        });
+
+        filterInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const tag = e.target.value.trim();
+                if (tag) {
+                    addNoteFilterTag(tag);
+                }
+            }
+        });
+    }
+});
+
+// Note tag input functions
+function handleNoteTagInput(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        const input = event.target;
+        const tag = input.value.trim();
+
+        if (tag && !noteSelectedTags.includes(tag)) {
+            noteSelectedTags.push(tag);
+            renderNoteTags();
+            input.value = '';
+            hideNoteTagSuggestions();
+        }
+    }
+}
+
+function showNoteTagSuggestions(event) {
+    const input = event.target;
+    const value = input.value.trim().toLowerCase();
+    const suggestionsContainer = document.getElementById('note-tag-suggestions');
+
+    if (!value) {
+        suggestionsContainer.classList.remove('active');
+        return;
+    }
+
+    const suggestions = allNoteTags.filter(tag =>
+        tag.toLowerCase().includes(value) &&
+        !noteSelectedTags.includes(tag)
+    );
+
+    if (suggestions.length === 0) {
+        suggestionsContainer.classList.remove('active');
+        return;
+    }
+
+    suggestionsContainer.innerHTML = suggestions.map(tag =>
+        `<div class="tag-suggestion-item" onclick="selectNoteTag('${tag}')">${tag}</div>`
+    ).join('');
+    suggestionsContainer.classList.add('active');
+}
+
+function hideNoteTagSuggestions() {
+    const suggestionsContainer = document.getElementById('note-tag-suggestions');
+    suggestionsContainer.classList.remove('active');
+}
+
+function selectNoteTag(tag) {
+    if (!noteSelectedTags.includes(tag)) {
+        noteSelectedTags.push(tag);
+        renderNoteTags();
+    }
+    document.getElementById('note-tag-input').value = '';
+    hideNoteTagSuggestions();
+}
+
+function renderNoteTags() {
+    const container = document.getElementById('note-selected-tags');
+    if (!container) return;
+
+    container.innerHTML = '';
+    noteSelectedTags.forEach(tag => {
+        const tagEl = document.createElement('div');
+        tagEl.className = 'tag-item';
+        tagEl.innerHTML = `
+            <span>${tag}</span>
+            <span class="tag-remove" onclick="removeNoteTag('${tag}')">&times;</span>
+        `;
+        container.appendChild(tagEl);
+    });
+
+    // Update hidden input
+    document.getElementById('note-tags').value = JSON.stringify(noteSelectedTags);
+}
+
+function removeNoteTag(tag) {
+    noteSelectedTags = noteSelectedTags.filter(t => t !== tag);
+    renderNoteTags();
 }
 
 // Open add note modal
@@ -1788,6 +2190,10 @@ async function openAddNoteModal() {
 
     // Reset note link search
     document.getElementById('note-link-search').value = '';
+
+    // Reset tags
+    noteSelectedTags = [];
+    renderNoteTags();
 
     // Initialize dropdowns
     initTaskDropdown();
@@ -1872,7 +2278,11 @@ async function editNote(noteId) {
         document.getElementById('note-id').value = note.id;
         document.getElementById('note-title').value = note.title;
         document.getElementById('note-content').value = note.content || '';
-        document.getElementById('note-tags').value = note.tags ? note.tags.join(', ') : '';
+
+        // Set tags
+        noteSelectedTags = note.tags || [];
+        renderNoteTags();
+
         document.getElementById('note-task').value = note.task_id || '';
 
         // Set task dropdown
@@ -1923,10 +2333,7 @@ async function saveNote(event) {
         title: document.getElementById('note-title').value,
         content: document.getElementById('note-content').value,
         task_id: document.getElementById('note-task').value || null,
-        tags: document.getElementById('note-tags').value
-            .split(',')
-            .map(tag => tag.trim())
-            .filter(tag => tag !== ''),
+        tags: noteSelectedTags,
         linked_note_ids: currentNoteLinkedNotes
     };
 
