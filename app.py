@@ -321,6 +321,25 @@ def delete_credential(credential_id):
     conn.close()
     return jsonify({'message': 'Credential deleted'})
 
+@app.route('/api/tasks/active-timers', methods=['GET'])
+def get_active_timers():
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get all tasks with active timers
+    cursor.execute('''
+        SELECT t.id, t.time_spent, tl.start_time,
+               (strftime('%s', 'now') - strftime('%s', tl.start_time)) as elapsed
+        FROM tasks t
+        JOIN time_logs tl ON t.id = tl.task_id
+        WHERE tl.end_time IS NULL
+        ORDER BY tl.start_time DESC
+    ''')
+    
+    active_timers = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(active_timers)
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, port=5000)

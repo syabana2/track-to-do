@@ -1,12 +1,14 @@
 let tasks = [];
 let activeTimers = {};
+let timerStartTimes = {}; // Store when each timer was started
 let tasksCreatedChart = null;
 let tasksCompletedChart = null;
 let credentials = [];
 
 // Initialize app
-document.addEventListener('DOMContentLoaded', () => {
-    loadTasks();
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadTasks();
+    await restoreActiveTimers();
     loadDashboard();
 });
 
@@ -40,6 +42,46 @@ async function loadTasks() {
         renderKanban();
     } catch (error) {
         console.error('Error loading tasks:', error);
+    }
+}
+
+// Restore active timers after page refresh
+async function restoreActiveTimers() {
+    try {
+        const response = await fetch('/api/tasks/active-timers');
+        const activeTimersList = await response.json();
+        
+        // Restore each active timer
+        for (const timerInfo of activeTimersList) {
+            const taskId = timerInfo.id;
+            
+            // Store the start time for this timer session
+            timerStartTimes[taskId] = {
+                startTime: new Date(timerInfo.start_time.replace(' ', 'T')),
+                baseTimeSpent: timerInfo.time_spent || 0
+            };
+            
+            // Update the task's display immediately
+            const task = tasks.find(t => t.id === taskId);
+            if (task) {
+                const now = new Date();
+                const elapsed = Math.floor((now - timerStartTimes[taskId].startTime) / 1000);
+                task.time_spent = timerStartTimes[taskId].baseTimeSpent + elapsed;
+                
+                // Start the interval timer to continue counting
+                activeTimers[taskId] = setInterval(() => {
+                    updateTaskTimer(taskId);
+                }, 1000);
+            }
+        }
+        
+        // Re-render to show timer buttons correctly
+        if (activeTimersList.length > 0) {
+            renderTodoList();
+            renderKanban();
+        }
+    } catch (error) {
+        console.error('Error restoring active timers:', error);
     }
 }
 
@@ -744,6 +786,14 @@ async function startTimer(taskId) {
 
         // Start new timer
         await fetch(`/api/tasks/${taskId}/start-timer`, { method: 'POST' });
+        
+        // Store the start time for this timer session
+        const task = tasks.find(t => t.id === taskId);
+        timerStartTimes[taskId] = {
+            startTime: new Date(),
+            baseTimeSpent: task ? task.time_spent || 0 : 0
+        };
+        
         activeTimers[taskId] = setInterval(() => {
             updateTaskTimer(taskId);
         }, 1000); // Update every second
@@ -762,13 +812,28 @@ async function startTimer(taskId) {
 
 async function stopTimer(taskId, shouldReload = true) {
     try {
-        await fetch(`/api/tasks/${taskId}/stop-timer`, { method: 'POST' });
+        const response = await fetch(`/api/tasks/${taskId}/stop-timer`, { method: 'POST' });
+        
+        if (!response.ok) {
+            throw new Error('Failed to stop timer');
+        }
+        
+        // Clear the interval timer
         if (activeTimers[taskId]) {
             clearInterval(activeTimers[taskId]);
             delete activeTimers[taskId];
         }
+        
+        // Clear the start time tracking
+        if (timerStartTimes[taskId]) {
+            delete timerStartTimes[taskId];
+        }
+        
+        // Reload tasks and re-render
         if (shouldReload) {
             await loadTasks();
+            renderTodoList();
+            renderKanban();
         }
     } catch (error) {
         console.error('Error stopping timer:', error);
@@ -787,15 +852,22 @@ function updateTaskTimer(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    // Increment time spent
-    task.time_spent = (task.time_spent || 0) + 1;
+    // Calculate time based on start time if available
+    if (timerStartTimes[taskId]) {
+        const now = new Date();
+        const elapsed = Math.floor((now - timerStartTimes[taskId].startTime) / 1000);
+        task.time_spent = timerStartTimes[taskId].baseTimeSpent + elapsed;
+    } else {
+        // Fallback to simple increment (shouldn't happen with new logic)
+        task.time_spent = (task.time_spent || 0) + 1;
+    }
 
     // Update display without full reload
     const taskElements = document.querySelectorAll(`[data-task-id="${taskId}"]`);
     taskElements.forEach(el => {
         const timeDisplay = el.querySelector('.task-time-display');
         if (timeDisplay) {
-            timeDisplay.textContent = formatTime(task.time_spent);
+            timeDisplay.textContent = `⏱️ ${formatTime(task.time_spent)}`;
         }
         const kanbanTimeDisplay = el.querySelector('.kanban-card-time');
         if (kanbanTimeDisplay) {
