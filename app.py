@@ -50,7 +50,11 @@ def init_db():
             title TEXT NOT NULL,
             project TEXT,
             ip TEXT NOT NULL,
+            username TEXT,
             password TEXT NOT NULL,
+            cost_usd REAL DEFAULT 0,
+            cost_idr REAL DEFAULT 0,
+            notes TEXT,
             tags TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -138,6 +142,14 @@ def init_db():
     columns = [column[1] for column in cursor.fetchall()]
     if 'tags' not in columns:
         cursor.execute('ALTER TABLE server_credentials ADD COLUMN tags TEXT')
+    if 'username' not in columns:
+        cursor.execute('ALTER TABLE server_credentials ADD COLUMN username TEXT')
+    if 'cost_usd' not in columns:
+        cursor.execute('ALTER TABLE server_credentials ADD COLUMN cost_usd REAL DEFAULT 0')
+    if 'cost_idr' not in columns:
+        cursor.execute('ALTER TABLE server_credentials ADD COLUMN cost_idr REAL DEFAULT 0')
+    if 'notes' not in columns:
+        cursor.execute('ALTER TABLE server_credentials ADD COLUMN notes TEXT')
 
     # Migration: Add folder_id column to notes if it doesn't exist
     cursor.execute("PRAGMA table_info(notes)")
@@ -393,8 +405,9 @@ def create_credential():
     tags_json = json.dumps(data.get('tags', []))
 
     cursor.execute(
-        'INSERT INTO server_credentials (title, project, ip, password, tags) VALUES (?, ?, ?, ?, ?)',
-        (data['title'], data.get('project', ''), data['ip'], data['password'], tags_json)
+        'INSERT INTO server_credentials (title, project, ip, username, password, cost_usd, cost_idr, notes, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (data['title'], data.get('project', ''), data['ip'], data.get('username', ''), 
+         data['password'], data.get('cost_usd', 0), data.get('cost_idr', 0), data.get('notes', ''), tags_json)
     )
 
     conn.commit()
@@ -412,8 +425,9 @@ def update_credential(credential_id):
     tags_json = json.dumps(data.get('tags', []))
 
     cursor.execute(
-        'UPDATE server_credentials SET title=?, project=?, ip=?, password=?, tags=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-        (data['title'], data.get('project', ''), data['ip'], data['password'], tags_json, credential_id)
+        'UPDATE server_credentials SET title=?, project=?, ip=?, username=?, password=?, cost_usd=?, cost_idr=?, notes=?, tags=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        (data['title'], data.get('project', ''), data['ip'], data.get('username', ''), 
+         data['password'], data.get('cost_usd', 0), data.get('cost_idr', 0), data.get('notes', ''), tags_json, credential_id)
     )
 
     conn.commit()

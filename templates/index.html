@@ -156,6 +156,18 @@
                 <button onclick="openAddCredentialModal()" class="btn-primary">+ Add Credential</button>
             </div>
 
+            <!-- Credentials Summary Cards -->
+            <div class="stats-grid" style="margin-bottom: 25px;">
+                <div class="stat-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                    <div class="stat-value" id="cred-total-idr">Rp 0</div>
+                    <div class="stat-label">Total Monthly Cost (IDR)</div>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">
+                    <div class="stat-value" id="cred-total-usd">$0.00</div>
+                    <div class="stat-label">Total Monthly Cost (USD)</div>
+                </div>
+            </div>
+
             <!-- Credentials Filters -->
             <div class="credentials-filters">
                 <input type="text" id="credentials-search" placeholder="Search by title or IP..." onkeyup="applyCredentialFilters()">
@@ -323,9 +335,31 @@
                             <input type="text" id="credential-ip" required placeholder="e.g., 192.168.1.100">
                         </div>
 
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>👤 Username</label>
+                                <input type="text" id="credential-username" placeholder="e.g. root or admin">
+                            </div>
+                            <div class="form-group">
+                                <label>🔑 Password *</label>
+                                <input type="password" id="credential-password" required placeholder="Enter password">
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>💵 Monthly Cost (USD)</label>
+                                <input type="number" id="credential-cost-usd" step="0.01" min="0" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label>🪙 Monthly Cost (IDR)</label>
+                                <input type="number" id="credential-cost-idr" step="1000" min="0" value="0">
+                            </div>
+                        </div>
+
                         <div class="form-group-full">
-                            <label>Password *</label>
-                            <input type="password" id="credential-password" required placeholder="Enter password">
+                            <label>📝 Services & Notes</label>
+                            <textarea id="credential-notes" rows="3" placeholder="e.g. Docker, Nginx, PostgreSQL..."></textarea>
                         </div>
                     </div>
 

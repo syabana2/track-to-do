@@ -1492,6 +1492,9 @@ function renderCredentials() {
     credentialsList.innerHTML = '';
 
     const filteredCredentials = getFilteredCredentials();
+    
+    // Update Summary
+    updateCredentialSummary(filteredCredentials);
 
     if (filteredCredentials.length === 0) {
         if (credentials.length === 0) {
@@ -1510,6 +1513,23 @@ function renderCredentials() {
         const tagsHtml = credential.tags && credential.tags.length > 0 ?
             `<div class="credential-tags">${credential.tags.map(tag => `<span class="credential-tag">🏷️ ${tag}</span>`).join('')}</div>` :
             '';
+
+        const costHtml = (credential.cost_usd > 0 || credential.cost_idr > 0) ? `
+            <div class="credential-field" style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                <span class="credential-label">💳 Monthly Cost</span>
+                <div style="display: flex; gap: 15px; font-size: 13px;">
+                    ${credential.cost_usd > 0 ? `<span style="color: #3b82f6;">$${credential.cost_usd.toFixed(2)}</span>` : ''}
+                    ${credential.cost_idr > 0 ? `<span style="color: #10b981;">Rp ${credential.cost_idr.toLocaleString('id-ID')}</span>` : ''}
+                </div>
+            </div>
+        ` : '';
+
+        const notesHtml = credential.notes ? `
+            <div class="credential-field" style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                <span class="credential-label">🛠️ Services</span>
+                <div style="font-size: 13px; color: var(--text-secondary); white-space: pre-wrap;">${credential.notes}</div>
+            </div>
+        ` : '';
 
         card.innerHTML = `
             <div class="credential-header">
@@ -1536,6 +1556,15 @@ function renderCredentials() {
                     </div>
                 </div>
                 <div class="credential-field">
+                    <span class="credential-label">👤 Username</span>
+                    <div class="credential-value-wrapper">
+                        <div class="credential-value">${credential.username || '-'}</div>
+                        <div class="credential-btn-group">
+                            <button class="copy-btn" onclick="copyToClipboard('${credential.username || ''}', event)">📋 Copy</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="credential-field">
                     <span class="credential-label">🔑 Password</span>
                     <div class="credential-value-wrapper">
                         <div class="credential-value">
@@ -1547,10 +1576,23 @@ function renderCredentials() {
                         </div>
                     </div>
                 </div>
+                ${costHtml}
+                ${notesHtml}
             </div>
         `;
         credentialsList.appendChild(card);
     });
+}
+
+function updateCredentialSummary(filteredList) {
+    const totalUSD = filteredList.reduce((sum, c) => sum + (c.cost_usd || 0), 0);
+    const totalIDR = filteredList.reduce((sum, c) => sum + (c.cost_idr || 0), 0);
+
+    const idrEl = document.getElementById('cred-total-idr');
+    const usdEl = document.getElementById('cred-total-usd');
+
+    if (idrEl) idrEl.textContent = `Rp ${totalIDR.toLocaleString('id-ID')}`;
+    if (usdEl) usdEl.textContent = `$${totalUSD.toFixed(2)}`;
 }
 
 // Open add credential modal
@@ -1558,6 +1600,13 @@ function openAddCredentialModal() {
     document.getElementById('credential-modal-title').textContent = 'Add Server Credential';
     document.getElementById('credential-form').reset();
     document.getElementById('credential-id').value = '';
+    
+    // Reset new fields
+    document.getElementById('credential-username').value = '';
+    document.getElementById('credential-cost-usd').value = 0;
+    document.getElementById('credential-cost-idr').value = 0;
+    document.getElementById('credential-notes').value = '';
+
     credentialSelectedTags = [];
     renderCredentialTags();
     document.getElementById('credential-modal').style.display = 'block';
@@ -1577,7 +1626,11 @@ async function saveCredential(event) {
         title: document.getElementById('credential-title').value,
         project: document.getElementById('credential-project').value,
         ip: document.getElementById('credential-ip').value,
+        username: document.getElementById('credential-username').value,
         password: document.getElementById('credential-password').value,
+        cost_usd: parseFloat(document.getElementById('credential-cost-usd').value) || 0,
+        cost_idr: parseFloat(document.getElementById('credential-cost-idr').value) || 0,
+        notes: document.getElementById('credential-notes').value,
         tags: credentialSelectedTags
     };
 
@@ -1630,7 +1683,11 @@ function editCredential(id) {
     document.getElementById('credential-title').value = credential.title;
     document.getElementById('credential-project').value = credential.project || '';
     document.getElementById('credential-ip').value = credential.ip;
+    document.getElementById('credential-username').value = credential.username || '';
     document.getElementById('credential-password').value = credential.password;
+    document.getElementById('credential-cost-usd').value = credential.cost_usd || 0;
+    document.getElementById('credential-cost-idr').value = credential.cost_idr || 0;
+    document.getElementById('credential-notes').value = credential.notes || '';
 
     // Set tags
     credentialSelectedTags = credential.tags || [];
