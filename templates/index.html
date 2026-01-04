@@ -163,24 +163,44 @@
 
         <!-- Notes View -->
         <div id="notes-view" class="view" style="display: none;">
-            <div class="section-header">
-                <h2>📝 Notes & Documentation</h2>
-                <button onclick="openAddNoteModal()" class="btn-primary">+ Add Note</button>
-            </div>
+            <div class="notes-layout">
+                <!-- Sidebar -->
+                <aside class="notes-sidebar">
+                    <div class="section-header">
+                        <h3 onclick="selectFolder(null)" style="cursor: pointer;" title="Show All Notes">📂 Folders</h3>
+                        <button onclick="openFolderModal()" class="btn-icon" title="New Folder">➕</button>
+                    </div>
+                    <div class="folder-tree" id="folder-tree">
+                        <!-- Folders will be rendered here -->
+                        <div class="folder-item active" onclick="selectFolder(null)">
+                            <span class="folder-icon">🏠</span>
+                            <span class="folder-name">All Notes</span>
+                        </div>
+                    </div>
+                </aside>
 
-            <!-- Notes Filter -->
-            <div class="notes-filters">
-                <input type="text" id="notes-search" placeholder="Search notes..." onkeyup="filterNotes()">
-                <div class="filter-tags-container">
-                    <label>Filter by Tags (space separated):</label>
-                    <input type="text" id="notes-filter-tag-input" placeholder="e.g. api planning" onkeyup="filterNotes()" autocomplete="off">
-                </div>
-                <select id="notes-task-filter" onchange="filterNotes()">
-                    <option value="">All Tasks</option>
-                </select>
-            </div>
+                <!-- Content -->
+                <main class="notes-content">
+                    <div class="section-header">
+                        <h2 id="current-folder-title">All Notes</h2>
+                        <button onclick="openAddNoteModal()" class="btn-primary">+ Add Note</button>
+                    </div>
 
-            <div id="notes-list" class="notes-grid"></div>
+                    <!-- Notes Filter -->
+                    <div class="notes-filters">
+                        <input type="text" id="notes-search" placeholder="Search notes..." onkeyup="filterNotes()">
+                        <div class="filter-tags-container">
+                            <label>Filter by Tags (space separated):</label>
+                            <input type="text" id="notes-filter-tag-input" placeholder="e.g. api planning" onkeyup="filterNotes()" autocomplete="off">
+                        </div>
+                        <select id="notes-task-filter" onchange="filterNotes()">
+                            <option value="">All Tasks</option>
+                        </select>
+                    </div>
+
+                    <div id="notes-list" class="notes-grid"></div>
+                </main>
+            </div>
         </div>
 
         <!-- Add/Edit Task Modal -->
@@ -340,22 +360,28 @@
 
                         <div class="form-row-2">
                             <div class="form-group">
+                                <label>📁 Folder</label>
+                                <select id="note-folder">
+                                    <option value="">(No Folder)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label>🏷️ Tags</label>
                                 <div class="tags-input-container">
                                     <div id="note-selected-tags" class="selected-tags"></div>
-                                    <input type="text" id="note-tag-input" placeholder="Type and press Enter or Space to add tags..." onkeydown="handleNoteTagInput(event)" oninput="showNoteTagSuggestions(event)" autocomplete="off">
+                                    <input type="text" id="note-tag-input" placeholder="Type and press Enter..." onkeydown="handleNoteTagInput(event)" oninput="showNoteTagSuggestions(event)" autocomplete="off">
                                     <div id="note-tag-suggestions" class="tag-suggestions"></div>
                                 </div>
                                 <input type="hidden" id="note-tags">
                             </div>
-                            <div class="form-group">
-                                <label>Link to Task (optional)</label>
-                                <div class="searchable-dropdown" id="task-dropdown-container">
-                                    <input type="text" id="note-task-search" placeholder="Search tasks..." autocomplete="off">
-                                    <div class="searchable-dropdown-list" id="task-dropdown-list"></div>
-                                </div>
-                                <input type="hidden" id="note-task">
+                        </div>
+                        <div class="form-group-full">
+                            <label>Link to Task (optional)</label>
+                            <div class="searchable-dropdown" id="task-dropdown-container">
+                                <input type="text" id="note-task-search" placeholder="Search tasks..." autocomplete="off">
+                                <div class="searchable-dropdown-list" id="task-dropdown-list"></div>
                             </div>
+                            <input type="hidden" id="note-task">
                         </div>
 
                         <div class="form-group-full">

@@ -115,11 +115,35 @@ def init_db():
         )
     ''')
 
+    # Folder System Tables
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            parent_id INTEGER,
+            position INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
+        )
+    ''')
+
+    # Migration: Add position column to folders if it doesn't exist
+    cursor.execute("PRAGMA table_info(folders)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'position' not in columns:
+        cursor.execute('ALTER TABLE folders ADD COLUMN position INTEGER DEFAULT 0')
+
     # Migration: Add tags column to server_credentials if it doesn't exist
     cursor.execute("PRAGMA table_info(server_credentials)")
     columns = [column[1] for column in cursor.fetchall()]
     if 'tags' not in columns:
         cursor.execute('ALTER TABLE server_credentials ADD COLUMN tags TEXT')
+
+    # Migration: Add folder_id column to notes if it doesn't exist
+    cursor.execute("PRAGMA table_info(notes)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'folder_id' not in columns:
+        cursor.execute('ALTER TABLE notes ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL')
 
     conn.commit()
     conn.close()
@@ -454,6 +478,112 @@ def update_time_spent(task_id):
     conn.close()
     return jsonify({'message': 'Time spent updated'})
 
+# Folder API Endpoints
+@app.route('/api/folders', methods=['GET'])
+def get_folders():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM folders ORDER BY position, name')
+    folders = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(folders)
+
+@app.route('/api/folders', methods=['POST'])
+def create_folder():
+    data = request.json
+    parent_id = data.get('parent_id')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get max position for this parent level
+    if parent_id:
+        cursor.execute('SELECT COALESCE(MAX(position), -1) FROM folders WHERE parent_id=?', (parent_id,))
+    else:
+        cursor.execute('SELECT COALESCE(MAX(position), -1) FROM folders WHERE parent_id IS NULL')
+    
+    max_pos = cursor.fetchone()[0]
+    new_pos = max_pos + 1
+
+    cursor.execute(
+        'INSERT INTO folders (name, parent_id, position) VALUES (?, ?, ?)',
+        (data['name'], parent_id, new_pos)
+    )
+    folder_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'id': folder_id, 'message': 'Folder created'}), 201
+
+@app.route('/api/folders/<int:folder_id>', methods=['PUT'])
+def update_folder(folder_id):
+    data = request.json
+    parent_id = data.get('parent_id')
+    
+    # Prevent self-parenting
+    if parent_id and int(parent_id) == folder_id:
+        return jsonify({'message': 'Cannot set folder as its own parent'}), 400
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check for deeper circular dependencies if parent_id is set
+    if parent_id:
+        curr_parent = parent_id
+        while curr_parent:
+            cursor.execute('SELECT parent_id FROM folders WHERE id=?', (curr_parent,))
+            row = cursor.fetchone()
+            if not row: break
+            curr_parent = row['parent_id']
+            if curr_parent == folder_id:
+                conn.close()
+                return jsonify({'message': 'Circular dependency detected'}), 400
+
+    cursor.execute(
+        'UPDATE folders SET name=?, parent_id=? WHERE id=?',
+        (data['name'], parent_id, folder_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Folder updated'})
+
+@app.route('/api/folders/<int:folder_id>', methods=['DELETE'])
+def delete_folder(folder_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 1. Get current folder's parent
+    cursor.execute('SELECT parent_id FROM folders WHERE id=?', (folder_id,))
+    row = cursor.fetchone()
+    parent_id = row['parent_id'] if row else None
+
+    # 2. Move subfolders to parent (or root)
+    cursor.execute('UPDATE folders SET parent_id=? WHERE parent_id=?', (parent_id, folder_id))
+    
+    # 3. Move notes to parent (optional, currently schema does ON DELETE SET NULL which is also fine)
+    # If we want notes to inherit the parent folder:
+    cursor.execute('UPDATE notes SET folder_id=? WHERE folder_id=?', (parent_id, folder_id))
+    
+    cursor.execute('DELETE FROM folders WHERE id=?', (folder_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Folder deleted'})
+
+@app.route('/api/folders/positions', methods=['PUT'])
+def update_folder_positions():
+    data = request.json  # Expects list of {id, position, parent_id}
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    for item in data:
+        cursor.execute(
+            'UPDATE folders SET position=?, parent_id=? WHERE id=?',
+            (item['position'], item.get('parent_id'), item['id'])
+        )
+        
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Positions updated'})
+
 # Notes API Endpoints
 @app.route('/api/notes', methods=['GET'])
 def get_notes():
@@ -523,8 +653,8 @@ def create_note():
 
     # Create note
     cursor.execute(
-        'INSERT INTO notes (title, content, task_id) VALUES (?, ?, ?)',
-        (data['title'], data.get('content', ''), data.get('task_id'))
+        'INSERT INTO notes (title, content, task_id, folder_id) VALUES (?, ?, ?, ?)',
+        (data['title'], data.get('content', ''), data.get('task_id'), data.get('folder_id'))
     )
     note_id = cursor.lastrowid
 
@@ -567,8 +697,8 @@ def update_note(note_id):
 
     # Update note
     cursor.execute(
-        'UPDATE notes SET title=?, content=?, task_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
-        (data['title'], data.get('content', ''), data.get('task_id'), note_id)
+        'UPDATE notes SET title=?, content=?, task_id=?, folder_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+        (data['title'], data.get('content', ''), data.get('task_id'), data.get('folder_id'), note_id)
     )
 
     # Update tags - delete old ones and insert new ones

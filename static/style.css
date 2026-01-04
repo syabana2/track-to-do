@@ -595,17 +595,20 @@ body {
     height: 100%;
     background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(4px);
+    overflow-y: auto;
+    padding: 40px 0;
 }
 
 .modal-content {
     background: var(--bg-secondary);
-    margin: 5% auto;
+    margin: 0 auto;
     padding: 0;
     border-radius: 12px;
     width: 90%;
     max-width: 550px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     border: 1px solid var(--border);
+    position: relative;
 }
 
 .modal-header {
@@ -1069,9 +1072,14 @@ body {
 
 /* Notes Filters */
 .notes-filters {
-    display: flex;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: 2fr 1.5fr 1fr;
+    gap: 15px;
     margin-bottom: 20px;
+    padding: 15px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
 }
 
 .notes-filters input,
@@ -1083,6 +1091,130 @@ body {
     color: var(--text-primary);
     font-size: 14px;
     flex: 1;
+}
+
+/* Notes Layout - Split View */
+.notes-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 20px;
+    min-height: 600px;
+}
+
+.notes-sidebar {
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    padding: 15px;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+.notes-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0; /* Prevent content from breaking grid layout */
+}
+
+/* Folder Tree */
+.folder-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: max-content;
+}
+
+.folder-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    white-space: nowrap;
+}
+
+.folder-toggle, .folder-toggle-placeholder {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.folder-toggle:hover {
+    color: var(--accent);
+}
+
+.folder-icon {
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.folder-item:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.folder-item.active {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--accent);
+}
+
+.folder-item.drag-over {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px dashed var(--accent);
+}
+
+.folder-item.drag-before {
+    border-top: 2px solid var(--accent);
+}
+
+.folder-item.drag-after {
+    border-bottom: 2px solid var(--accent);
+}
+
+.folder-name {
+    flex: 1;
+    color: var(--text-primary);
+}
+
+.folder-actions {
+    display: none;
+    gap: 4px;
+}
+
+.folder-item:hover .folder-actions {
+    display: flex;
+}
+
+.folder-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px;
+    border-radius: 4px;
+}
+
+.folder-btn:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.folder-children {
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 1px solid var(--border);
+    margin-left: 10px;
 }
 
 /* Notes Grid */
@@ -1579,9 +1711,13 @@ body {
     .notes-grid {
         grid-template-columns: 1fr;
     }
+    
+    .notes-layout {
+        grid-template-columns: 1fr;
+    }
 
     .notes-filters {
-        flex-direction: column;
+        grid-template-columns: 1fr;
     }
 
     .modal-large {
@@ -1650,7 +1786,7 @@ body {
 /* Credentials Filters */
 .credentials-filters {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr auto;
+    grid-template-columns: 2fr 1fr 1.5fr auto;
     gap: 15px;
     margin-bottom: 20px;
     padding: 15px;
@@ -1861,50 +1997,4 @@ body {
 
 .filter-selected-tags .tag-item .tag-remove:hover {
     opacity: 1;
-}
-
-/* Update credentials filters layout */
-.credentials-filters {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1.5fr auto;
-    gap: 15px;
-    margin-bottom: 20px;
-    padding: 15px;
-    background: var(--bg-secondary);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-}
-
-/* Update notes filters layout */
-.notes-filters {
-    display: grid;
-    grid-template-columns: 2fr 1.5fr 1fr;
-    gap: 15px;
-    margin-bottom: 20px;
-    padding: 15px;
-    background: var(--bg-secondary);
-    border-radius: 12px;
-    border: 1px solid var(--border);
-}
-
-.notes-filters input[type="text"],
-.notes-filters select {
-    padding: 10px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 14px;
-}
-
-.notes-filters input[type="text"]:focus,
-.notes-filters select:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
-@media (max-width: 768px) {
-    .notes-filters {
-        grid-template-columns: 1fr;
-    }
 }

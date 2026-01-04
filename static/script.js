@@ -93,6 +93,7 @@ function showView(viewName) {
     } else if (viewName === 'credentials') {
         loadCredentials();
     } else if (viewName === 'notes') {
+        loadFolders();
         loadNotes();
     }
 }
@@ -1213,11 +1214,15 @@ function clearFilters() {
 window.onclick = function(event) {
     const modal = document.getElementById('task-modal');
     const credentialModal = document.getElementById('credential-modal');
+    const noteModal = document.getElementById('note-modal');
     if (event.target === modal) {
         closeModal();
     }
     if (event.target === credentialModal) {
         closeCredentialModal();
+    }
+    if (event.target === noteModal) {
+        closeNoteModal();
     }
 }
 
@@ -1753,8 +1758,551 @@ async function editTimeSpent(taskId, e) {
 // ==================== NOTES SYSTEM ====================
 
 let notes = [];
+let folders = [];
+let expandedFolders = new Set(); // Track expanded folder IDs
+let currentFolderId = null; // null = all notes, 'uncategorized' = no folder
 let allNotes = []; // For internal linking
 let currentNoteLinkedNotes = []; // Store linked note IDs for current note
+
+// Load folders from API
+async function loadFolders() {
+    try {
+        const response = await fetch('/api/folders');
+        folders = await response.json();
+        renderFolderTree();
+        // Don't update dropdowns here if we switch to SweetAlert, but useful for Note Modal
+        updateFolderSelects(); 
+    } catch (error) {
+        console.error('Error loading folders:', error);
+    }
+}
+
+function updateFolderSelects() {
+    // Update Folder Select in Note Modal
+    const noteFolderSelect = document.getElementById('note-folder');
+    if (noteFolderSelect) {
+        const currentVal = noteFolderSelect.value;
+        noteFolderSelect.innerHTML = '<option value="">(No Folder)</option>';
+        
+        const addOptions = (parentId, level) => {
+            const children = folders.filter(f => f.parent_id === parentId);
+            children.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.id;
+                option.textContent = '—'.repeat(level) + ' ' + folder.name;
+                noteFolderSelect.appendChild(option);
+                addOptions(folder.id, level + 1);
+            });
+        };
+        addOptions(null, 0);
+        noteFolderSelect.value = currentVal;
+    }
+}
+
+function toggleFolder(e, folderId) {
+    e.stopPropagation();
+    if (expandedFolders.has(folderId)) {
+        expandedFolders.delete(folderId);
+    } else {
+        expandedFolders.add(folderId);
+    }
+    renderFolderTree();
+}
+
+function renderFolderTree() {
+    const treeContainer = document.getElementById('folder-tree');
+    if (!treeContainer) return;
+
+    treeContainer.innerHTML = '';
+
+    const renderNode = (parentId, container, isRoot = false) => {
+        // Sort by position, then by name
+        const children = folders
+            .filter(f => f.parent_id === parentId)
+            .sort((a, b) => (a.position - b.position) || a.name.localeCompare(b.name));
+            
+        if (children.length === 0) return;
+
+        // Create a wrapper for children if not root
+        let childrenContainer = container;
+        if (!isRoot) {
+            childrenContainer = document.createElement('div');
+            childrenContainer.className = 'folder-children';
+            container.appendChild(childrenContainer);
+        }
+        
+        children.forEach(folder => {
+            const hasChildren = folders.some(f => f.parent_id === folder.id);
+            const isExpanded = expandedFolders.has(folder.id);
+            const folderWrapper = document.createElement('div');
+            folderWrapper.className = 'folder-wrapper';
+            
+            // Item Row
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `folder-item ${currentFolderId === folder.id ? 'active' : ''}`;
+            itemDiv.draggable = true;
+            itemDiv.dataset.folderId = folder.id;
+            
+            // DnD Events
+            itemDiv.addEventListener('dragstart', handleFolderDragStart);
+            itemDiv.addEventListener('dragover', handleDragOver);
+            itemDiv.addEventListener('dragleave', handleDragLeave);
+            itemDiv.addEventListener('drop', (e) => handleDropToFolder(e, folder.id));
+            itemDiv.addEventListener('click', (e) => {
+                if (!e.target.closest('.folder-actions') && !e.target.closest('.folder-toggle')) {
+                    selectFolder(folder.id);
+                }
+            });
+
+            // Toggle Icon
+            const toggleIcon = hasChildren ? (isExpanded ? '▼' : '▶') : '';
+            const toggleClass = hasChildren ? 'folder-toggle' : 'folder-toggle-placeholder';
+            const toggleAction = hasChildren ? `onclick="toggleFolder(event, ${folder.id})"` : '';
+
+            itemDiv.innerHTML = `
+                <span class="${toggleClass}" ${toggleAction}>${toggleIcon}</span>
+                <span class="folder-icon">📁</span>
+                <span class="folder-name">${folder.name}</span>
+                <div class="folder-actions">
+                    <button class="folder-btn" onclick="editFolder(${folder.id})" title="Edit">✏️</button>
+                </div>
+            `;
+            
+            folderWrapper.appendChild(itemDiv);
+            childrenContainer.appendChild(folderWrapper);
+            
+            // Recursive Children (only if expanded)
+            if (isExpanded) {
+                renderNode(folder.id, folderWrapper, false);
+            }
+        });
+    };
+
+    // Render root items (parent_id: null) directly into treeContainer
+    renderNode(null, treeContainer, true);
+}
+
+function selectFolder(folderId) {
+    currentFolderId = folderId;
+    renderFolderTree(); // Re-render to update active state
+    
+    // Update Title
+    const titleEl = document.getElementById('current-folder-title');
+    if (folderId === null) titleEl.textContent = 'All Notes';
+    else if (folderId === 'uncategorized') titleEl.textContent = 'Uncategorized Notes';
+    else {
+        const folder = folders.find(f => f.id === folderId);
+        titleEl.textContent = folder ? folder.name : 'Unknown Folder';
+    }
+    
+    filterNotes();
+}
+
+// Folder Modal Functions (Using SweetAlert2)
+async function openFolderModal() {
+    const folderOptions = getFolderOptionsHtml(null);
+    
+    const { value: formValues } = await Swal.fire({
+        title: 'Create New Folder',
+        html: `
+            <div style="text-align: left;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Folder Name *</label>
+                <input id="swal-folder-name" class="swal2-input" placeholder="Enter name" style="width: 100%; margin: 0 0 16px 0;">
+                
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Parent Folder</label>
+                <select id="swal-folder-parent" class="swal2-input" style="width: 100%; margin: 0;">
+                    <option value="">(None - Root)</option>
+                    ${folderOptions}
+                </select>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Create',
+        confirmButtonColor: '#6366f1',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        preConfirm: () => {
+            const name = document.getElementById('swal-folder-name').value.trim();
+            if (!name) {
+                Swal.showValidationMessage('Please enter a name');
+                return false;
+            }
+            return {
+                name: name,
+                parent_id: document.getElementById('swal-folder-parent').value || null
+            };
+        }
+    });
+
+    if (formValues) {
+        try {
+            const response = await fetch('/api/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formValues)
+            });
+            if (response.ok) {
+                loadFolders();
+                Swal.fire({ icon: 'success', title: 'Folder created!', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+            }
+        } catch (error) {
+            console.error('Error saving folder:', error);
+        }
+    }
+}
+
+async function editFolder(folderId) {
+    const folder = folders.find(f => f.id === folderId);
+    if (!folder) return;
+
+    const folderOptions = getFolderOptionsHtml(folder.id);
+    
+    const swalResult = await Swal.fire({
+        title: 'Edit Folder',
+        html: `
+            <div style="text-align: left;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Folder Name *</label>
+                <input id="swal-folder-name" class="swal2-input" value="${folder.name}" style="width: 100%; margin: 0 0 16px 0;">
+                
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">Parent Folder</label>
+                <select id="swal-folder-parent" class="swal2-input" style="width: 100%; margin: 0;">
+                    <option value="">(None - Root)</option>
+                    ${folderOptions}
+                </select>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: 'Save',
+        denyButtonText: 'Delete',
+        denyButtonColor: 'var(--danger)',
+        confirmButtonColor: '#6366f1',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        didOpen: () => {
+            document.getElementById('swal-folder-parent').value = folder.parent_id || '';
+        },
+        preConfirm: () => {
+            const name = document.getElementById('swal-folder-name').value.trim();
+            if (!name) {
+                Swal.showValidationMessage('Please enter a name');
+                return false;
+            }
+            return {
+                name: name,
+                parent_id: document.getElementById('swal-folder-parent').value || null
+            };
+        }
+    });
+
+    if (swalResult.isConfirmed) {
+        // Save logic
+        try {
+            const response = await fetch(`/api/folders/${folderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(swalResult.value)
+            });
+            if (response.ok) {
+                loadFolders();
+                Swal.fire({ icon: 'success', title: 'Folder updated!', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+            }
+        } catch (error) {
+            console.error('Error saving folder:', error);
+        }
+    } else if (swalResult.isDenied) {
+        // Delete logic
+        deleteFolderConfirm(folderId);
+    }
+}
+
+function getFolderOptionsHtml(excludeId = null) {
+    let options = '';
+    
+    // Get all children of excludeId to prevent moving folder into its own subtree
+    const getExcludedSubtree = (parentId) => {
+        let ids = [parentId];
+        const children = folders.filter(f => f.parent_id === parentId);
+        children.forEach(c => {
+            ids = ids.concat(getExcludedSubtree(c.id));
+        });
+        return ids;
+    };
+    
+    const excludedIds = excludeId ? getExcludedSubtree(excludeId) : [];
+
+    const addOptions = (parentId, level) => {
+        const children = folders.filter(f => f.parent_id === parentId);
+        children.forEach(folder => {
+            if (!excludedIds.includes(folder.id)) {
+                options += `<option value="${folder.id}">${'—'.repeat(level)} ${folder.name}</option>`;
+                addOptions(folder.id, level + 1);
+            }
+        });
+    };
+    
+    addOptions(null, 0);
+    return options;
+}
+
+async function deleteFolderConfirm(folderId) {
+    const result = await Swal.fire({
+        title: 'Are you sure?',
+        text: 'Subfolders and notes inside will be moved to the parent folder (or root).',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: 'var(--danger)',
+        confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            await fetch(`/api/folders/${folderId}`, { method: 'DELETE' });
+            loadFolders();
+            loadNotes(); // Reload notes as they might have moved to parent
+            if (currentFolderId == folderId) selectFolder(null);
+            Swal.fire({ icon: 'success', title: 'Deleted!', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+        } catch (error) {
+            console.error('Error deleting folder:', error);
+        }
+    }
+}
+
+async function categorizeUncategorized(e) {
+    if (e) e.stopPropagation();
+    
+    const { value: folderName } = await Swal.fire({
+        title: 'Categorize Uncategorized Notes',
+        input: 'text',
+        inputLabel: 'Create a new folder for all notes without a folder',
+        inputPlaceholder: 'Enter folder name',
+        showCancelButton: true,
+        confirmButtonColor: '#6366f1',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        inputValidator: (value) => {
+            if (!value) return 'Please enter a name';
+        }
+    });
+
+    if (folderName) {
+        try {
+            // 1. Create the folder
+            const res = await fetch('/api/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: folderName, parent_id: null })
+            });
+            const folder = await res.json();
+            
+            // 2. Move all uncategorized notes to this folder
+            const uncategorizedNotes = allNotes.filter(n => !n.folder_id);
+            for (const note of uncategorizedNotes) {
+                await fetch(`/api/notes/${note.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: note.title,
+                        content: note.content,
+                        task_id: note.task_id,
+                        folder_id: folder.id,
+                        tags: note.tags
+                    })
+                });
+            }
+            
+            await loadFolders();
+            await loadNotes();
+            Swal.fire({ icon: 'success', title: 'Notes categorized!', toast: true, position: 'top-end', showConfirmButton: false, timer: 2000 });
+        } catch (error) {
+            console.error('Error categorizing notes:', error);
+        }
+    }
+}
+
+function closeFolderModal() {
+    // No longer used with SweetAlert, but kept for compatibility if called elsewhere
+}
+
+async function saveFolder(event) {
+    // No longer used with SweetAlert
+}
+
+async function deleteFolder() {
+    // No longer used with SweetAlert
+}
+
+// Drag and Drop Logic
+let draggedItem = null;
+let draggedType = null; // 'folder' or 'note'
+let dropAction = null; // 'before', 'after', 'inside'
+
+function handleFolderDragStart(e) {
+    draggedItem = e.target.dataset.folderId;
+    draggedType = 'folder';
+    e.dataTransfer.effectAllowed = 'move';
+    e.stopPropagation();
+}
+
+function handleNoteDragStart(e) {
+    draggedItem = e.target.closest('.note-card').dataset.noteId;
+    draggedType = 'note';
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    const target = e.currentTarget;
+    if (!target.classList.contains('folder-item')) return;
+
+    const rect = target.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    
+    // Reset classes
+    target.classList.remove('drag-before', 'drag-after', 'drag-over');
+
+    // Only allow nesting for Folders if not dragging a folder into its own subtree
+    // For simplicity, we define regions: Top 25% (before), Bottom 25% (after), Middle 50% (inside)
+    if (y < rect.height * 0.25) {
+        dropAction = 'before';
+        target.classList.add('drag-before');
+    } else if (y > rect.height * 0.75) {
+        dropAction = 'after';
+        target.classList.add('drag-after');
+    } else {
+        dropAction = 'inside';
+        target.classList.add('drag-over');
+    }
+}
+
+function handleDragLeave(e) {
+    const target = e.currentTarget;
+    target.classList.remove('drag-before', 'drag-after', 'drag-over');
+}
+
+async function handleDropToFolder(e, targetFolderId) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const target = e.currentTarget;
+    target.classList.remove('drag-before', 'drag-after', 'drag-over');
+    
+    if (!draggedItem) return;
+    
+    if (draggedType === 'folder') {
+        if (draggedItem == targetFolderId) return;
+
+        const draggedFolder = folders.find(f => f.id == draggedItem);
+        const targetFolder = folders.find(f => f.id == targetFolderId);
+        
+        let newParentId = targetFolder.parent_id;
+        let newPosition = targetFolder.position;
+
+        if (dropAction === 'inside') {
+            newParentId = targetFolder.id;
+            // Get max position in new parent
+            const siblings = folders.filter(f => f.parent_id == newParentId);
+            newPosition = siblings.length > 0 ? Math.max(...siblings.map(s => s.position)) + 1 : 0;
+        } else if (dropAction === 'after') {
+            newPosition += 1;
+        }
+
+        // Prevent dropping into its own children
+        const isDescendant = (parentId, childId) => {
+            const children = folders.filter(f => f.parent_id == parentId);
+            if (children.some(c => c.id == childId)) return true;
+            return children.some(c => isDescendant(c.id, childId));
+        };
+        
+        if (isDescendant(draggedItem, newParentId)) {
+            Swal.fire({ icon: 'error', title: 'Invalid move', text: 'Cannot move a folder into its own subfolder.', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+            return;
+        }
+
+        await moveAndReorderFolder(draggedItem, newParentId, newPosition);
+        
+    } else if (draggedType === 'note') {
+        const note = notes.find(n => n.id == draggedItem);
+        if (note) {
+            await fetch(`/api/notes/${draggedItem}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: note.title,
+                    content: note.content,
+                    task_id: note.task_id,
+                    folder_id: targetFolderId,
+                    tags: note.tags
+                })
+            });
+            loadNotes();
+        }
+    }
+    
+    draggedItem = null;
+    draggedType = null;
+    dropAction = null;
+}
+
+async function handleDropToRoot(e) {
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.classList.remove('drag-over');
+    
+    if (!draggedItem) return;
+    
+    if (draggedType === 'folder') {
+        // Move to top of root
+        await moveAndReorderFolder(draggedItem, null, 0);
+    } else if (draggedType === 'note') {
+        const note = notes.find(n => n.id == draggedItem);
+        await fetch(`/api/notes/${draggedItem}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...note, folder_id: null })
+        });
+        loadNotes();
+    }
+    
+    draggedItem = null;
+    draggedType = null;
+}
+
+async function moveAndReorderFolder(folderId, newParentId, newPosition) {
+    // 1. Update the moved folder
+    const folder = folders.find(f => f.id == folderId);
+    
+    // 2. Shift others in the same parent level
+    const siblings = folders
+        .filter(f => f.parent_id == newParentId && f.id != folderId)
+        .sort((a, b) => a.position - b.position);
+    
+    siblings.splice(newPosition, 0, { id: folderId, isMoved: true });
+    
+    const updates = siblings.map((s, index) => ({
+        id: s.id,
+        position: index,
+        parent_id: newParentId
+    }));
+
+    try {
+        await fetch('/api/folders/positions', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+        loadFolders();
+    } catch (error) {
+        console.error('Error reordering folders:', error);
+    }
+}
+
+
+
 
 // Searchable dropdown state
 let taskDropdownState = {
@@ -1983,7 +2531,7 @@ async function loadNotes() {
         notes = await response.json();
         allNotes = [...notes];
         await loadAllNoteTags();
-        renderNotes();
+        filterNotes();
         populateNotesFilters();
     } catch (error) {
         console.error('Error loading notes:', error);
@@ -2013,6 +2561,9 @@ function renderNotes() {
     notes.forEach(note => {
         const noteCard = document.createElement('div');
         noteCard.className = 'note-card';
+        noteCard.draggable = true;
+        noteCard.dataset.noteId = note.id;
+        noteCard.addEventListener('dragstart', handleNoteDragStart);
 
         // Parse markdown for preview
         const contentPreview = note.content ?
@@ -2053,6 +2604,18 @@ function filterNotes() {
     const tagInput = document.getElementById('notes-filter-tag-input')?.value.toLowerCase().trim() || '';
 
     notes = allNotes.filter(note => {
+        // Folder Filter
+        let matchesFolder = true;
+        if (currentFolderId === null) {
+            matchesFolder = true; // All Notes
+        } else if (currentFolderId === 'uncategorized') {
+            matchesFolder = !note.folder_id;
+        } else {
+            matchesFolder = note.folder_id === currentFolderId;
+        }
+        
+        if (!matchesFolder) return false;
+
         const matchesSearch = !searchTerm ||
             note.title.toLowerCase().includes(searchTerm) ||
             (note.content && note.content.toLowerCase().includes(searchTerm));
@@ -2200,6 +2763,14 @@ async function openAddNoteModal() {
     // Initialize dropdowns
     initTaskDropdown();
     initNoteLinkDropdown();
+    updateFolderSelects();
+
+    // Pre-select current folder
+    if (currentFolderId && currentFolderId !== 'uncategorized') {
+        document.getElementById('note-folder').value = currentFolderId;
+    } else {
+        document.getElementById('note-folder').value = '';
+    }
 
     document.getElementById('note-modal').style.display = 'block';
 }
@@ -2280,6 +2851,10 @@ async function editNote(noteId) {
         document.getElementById('note-id').value = note.id;
         document.getElementById('note-title').value = note.title;
         document.getElementById('note-content').value = note.content || '';
+        
+        // Populate Folder
+        updateFolderSelects(); // Ensure options are fresh
+        document.getElementById('note-folder').value = note.folder_id || '';
 
         // Set tags
         noteSelectedTags = note.tags || [];
@@ -2335,6 +2910,7 @@ async function saveNote(event) {
         title: document.getElementById('note-title').value,
         content: document.getElementById('note-content').value,
         task_id: document.getElementById('note-task').value || null,
+        folder_id: document.getElementById('note-folder').value || null,
         tags: noteSelectedTags,
         linked_note_ids: currentNoteLinkedNotes
     };
