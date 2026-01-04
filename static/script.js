@@ -48,6 +48,7 @@ if (typeof marked !== 'undefined') {
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
+    initDefaultFilters();
     await loadTasks();
     await restoreActiveTimers();
     loadDashboard();
@@ -1183,6 +1184,60 @@ function populateProjectFilter() {
     projectFilter.value = currentValue;
 }
 
+function initDefaultFilters() {
+    const quickDate = document.getElementById('filter-quick-date');
+    if (quickDate) {
+        quickDate.value = 'last-week';
+        applyQuickDate(false); // Apply without re-rendering since tasks aren't loaded yet
+    }
+}
+
+function applyQuickDate(shouldApply = true) {
+    const quickDate = document.getElementById('filter-quick-date').value;
+    const dateFromInput = document.getElementById('filter-date-from');
+    const dateToInput = document.getElementById('filter-date-to');
+    
+    if (!quickDate) return;
+
+    const now = new Date();
+    let fromDate = new Date();
+    let toDate = new Date();
+
+    // Set toDate to end of today
+    toDate.setHours(23, 59, 59, 999);
+
+    switch (quickDate) {
+        case 'today':
+            fromDate.setHours(0, 0, 0, 0);
+            break;
+        case 'yesterday':
+            fromDate.setDate(now.getDate() - 1);
+            fromDate.setHours(0, 0, 0, 0);
+            toDate.setDate(now.getDate() - 1);
+            toDate.setHours(23, 59, 59, 999);
+            break;
+        case 'last-week':
+            fromDate.setDate(now.getDate() - 6); // Last 7 days including today
+            fromDate.setHours(0, 0, 0, 0);
+            break;
+        case 'last-month':
+            fromDate.setDate(now.getDate() - 29); // Last 30 days including today
+            fromDate.setHours(0, 0, 0, 0);
+            break;
+        case 'last-year':
+            fromDate.setDate(now.getDate() - 364); // Last 365 days including today
+            fromDate.setHours(0, 0, 0, 0);
+            break;
+    }
+
+    dateFromInput.value = formatDateToLocalYMD(fromDate);
+    dateToInput.value = formatDateToLocalYMD(toDate);
+
+    if (shouldApply) {
+        applyFilters();
+    }
+}
+
 function applyFilters() {
     const currentView = document.querySelector('.view[style="display: block;"]');
 
@@ -1205,6 +1260,7 @@ function clearFilters() {
     document.getElementById('filter-project').value = '';
     document.getElementById('filter-priority').value = '';
     document.getElementById('filter-status').value = '';
+    document.getElementById('filter-quick-date').value = '';
     document.getElementById('filter-date-from').value = '';
     document.getElementById('filter-date-to').value = '';
     applyFilters();

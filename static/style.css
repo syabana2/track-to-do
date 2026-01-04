@@ -721,7 +721,7 @@ body {
 
 .filters-container {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     padding: 18px 20px;
     background: var(--bg-secondary);
