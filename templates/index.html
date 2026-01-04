@@ -63,7 +63,7 @@
                 <label>📅 Date To</label>
                 <input type="date" id="filter-date-to" onchange="applyFilters()">
             </div>
-            <div class="filter-group filter-actions">
+            <div class="filter-group filter-actions" style="grid-column: 1 / -1; justify-content: center; display: flex;">
                 <button onclick="clearFilters()" class="btn-clear-filter">Clear All Filters</button>
             </div>
         </div>
@@ -152,10 +152,8 @@
                     <option value="">All Projects</option>
                 </select>
                 <div class="filter-tags-container">
-                    <label>Filter by Tags:</label>
-                    <div id="credentials-filter-selected-tags" class="filter-selected-tags"></div>
-                    <input type="text" id="credentials-filter-tag-input" placeholder="Type to search tags..." autocomplete="off">
-                    <div id="credentials-filter-tag-suggestions" class="tag-suggestions"></div>
+                    <label>Filter by Tags (space separated):</label>
+                    <input type="text" id="credentials-filter-tag-input" placeholder="e.g. production db" onkeyup="applyCredentialFilters()" autocomplete="off">
                 </div>
                 <button onclick="clearCredentialFilters()" class="btn-clear-filter">Clear Filters</button>
             </div>
@@ -174,10 +172,8 @@
             <div class="notes-filters">
                 <input type="text" id="notes-search" placeholder="Search notes..." onkeyup="filterNotes()">
                 <div class="filter-tags-container">
-                    <label>Filter by Tags:</label>
-                    <div id="notes-filter-selected-tags" class="filter-selected-tags"></div>
-                    <input type="text" id="notes-filter-tag-input" placeholder="Type to search tags..." autocomplete="off">
-                    <div id="notes-filter-tag-suggestions" class="tag-suggestions"></div>
+                    <label>Filter by Tags (space separated):</label>
+                    <input type="text" id="notes-filter-tag-input" placeholder="e.g. api planning" onkeyup="filterNotes()" autocomplete="off">
                 </div>
                 <select id="notes-task-filter" onchange="filterNotes()">
                     <option value="">All Tasks</option>

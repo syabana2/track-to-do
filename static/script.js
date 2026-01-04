@@ -1309,11 +1309,17 @@ function getFilteredCredentials() {
         filtered = filtered.filter(cred => cred.project === projectFilter);
     }
 
-    // Filter by tags (multi-select - credential must have ALL selected tags)
-    if (credentialFilterSelectedTags.length > 0) {
+    // Filter by tags (space separated input)
+    const tagInput = document.getElementById('credentials-filter-tag-input')?.value.toLowerCase().trim() || '';
+    if (tagInput) {
+        const searchTags = tagInput.split(/\s+/); // Split by whitespace
         filtered = filtered.filter(cred => {
             if (!cred.tags || cred.tags.length === 0) return false;
-            return credentialFilterSelectedTags.every(tag => cred.tags.includes(tag));
+            // Check if ALL search tokens match at least one of the credential tags (partial matching allowed for better UX)
+            const credTagsLower = cred.tags.map(t => t.toLowerCase());
+            return searchTags.every(searchTag => 
+                credTagsLower.some(credTag => credTag.includes(searchTag))
+            );
         });
     }
 
@@ -1330,8 +1336,6 @@ function clearCredentialFilters() {
     document.getElementById('credentials-search').value = '';
     document.getElementById('credentials-project-filter').value = '';
     document.getElementById('credentials-filter-tag-input').value = '';
-    credentialFilterSelectedTags = [];
-    renderCredentialFilterTags();
     renderCredentials();
 }
 
@@ -1419,87 +1423,6 @@ function renderCredentialTags() {
 function removeCredentialTag(tag) {
     credentialSelectedTags = credentialSelectedTags.filter(t => t !== tag);
     renderCredentialTags();
-}
-
-// Credential filter tag functions
-function renderCredentialFilterTags() {
-    const container = document.getElementById('credentials-filter-selected-tags');
-    if (!container) return;
-
-    container.innerHTML = '';
-    credentialFilterSelectedTags.forEach(tag => {
-        const tagEl = document.createElement('div');
-        tagEl.className = 'tag-item';
-        tagEl.innerHTML = `
-            <span>${tag}</span>
-            <span class="tag-remove" onclick="removeCredentialFilterTag('${tag}')">&times;</span>
-        `;
-        container.appendChild(tagEl);
-    });
-}
-
-function removeCredentialFilterTag(tag) {
-    credentialFilterSelectedTags = credentialFilterSelectedTags.filter(t => t !== tag);
-    renderCredentialFilterTags();
-    applyCredentialFilters();
-}
-
-// Setup credential filter tag input
-document.addEventListener('DOMContentLoaded', () => {
-    const filterInput = document.getElementById('credentials-filter-tag-input');
-    const filterSuggestions = document.getElementById('credentials-filter-tag-suggestions');
-
-    if (filterInput) {
-        filterInput.addEventListener('input', (e) => {
-            const value = e.target.value.trim().toLowerCase();
-
-            if (!value) {
-                filterSuggestions.classList.remove('active');
-                return;
-            }
-
-            const suggestions = allCredentialTags.filter(tag =>
-                tag.toLowerCase().includes(value) &&
-                !credentialFilterSelectedTags.includes(tag)
-            );
-
-            if (suggestions.length === 0) {
-                filterSuggestions.classList.remove('active');
-                return;
-            }
-
-            filterSuggestions.innerHTML = suggestions.map(tag =>
-                `<div class="tag-suggestion-item" onclick="addCredentialFilterTag('${tag}')">${tag}</div>`
-            ).join('');
-            filterSuggestions.classList.add('active');
-        });
-
-        filterInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                const tag = e.target.value.trim();
-                if (tag) {
-                    addCredentialFilterTag(tag);
-                }
-            }
-        });
-    }
-});
-
-function addCredentialFilterTag(tag) {
-    if (!credentialFilterSelectedTags.includes(tag)) {
-        credentialFilterSelectedTags.push(tag);
-        renderCredentialFilterTags();
-        applyCredentialFilters();
-    }
-    const filterInput = document.getElementById('credentials-filter-tag-input');
-    if (filterInput) {
-        filterInput.value = '';
-    }
-    const filterSuggestions = document.getElementById('credentials-filter-tag-suggestions');
-    if (filterSuggestions) {
-        filterSuggestions.classList.remove('active');
-    }
 }
 
 // Render credentials list
@@ -2127,15 +2050,26 @@ function renderNotes() {
 function filterNotes() {
     const searchTerm = document.getElementById('notes-search').value.toLowerCase();
     const taskFilter = document.getElementById('notes-task-filter').value;
+    const tagInput = document.getElementById('notes-filter-tag-input')?.value.toLowerCase().trim() || '';
 
     notes = allNotes.filter(note => {
         const matchesSearch = !searchTerm ||
             note.title.toLowerCase().includes(searchTerm) ||
             (note.content && note.content.toLowerCase().includes(searchTerm));
 
-        // Filter by tags (multi-select - note must have ALL selected tags)
-        const matchesTags = noteFilterSelectedTags.length === 0 ||
-            (note.tags && noteFilterSelectedTags.every(tag => note.tags.includes(tag)));
+        // Filter by tags (space separated input)
+        let matchesTags = true;
+        if (tagInput) {
+            const searchTags = tagInput.split(/\s+/);
+            if (!note.tags || note.tags.length === 0) {
+                matchesTags = false;
+            } else {
+                const noteTagsLower = note.tags.map(t => t.toLowerCase());
+                matchesTags = searchTags.every(searchTag => 
+                    noteTagsLower.some(noteTag => noteTag.includes(searchTag))
+                );
+            }
+        }
 
         const matchesTask = !taskFilter ||
             (taskFilter === 'no-task' && !note.task_id) ||
@@ -2160,87 +2094,6 @@ function populateNotesFilters() {
         taskFilter.appendChild(option);
     });
 }
-
-// Note filter tag functions
-function renderNoteFilterTags() {
-    const container = document.getElementById('notes-filter-selected-tags');
-    if (!container) return;
-
-    container.innerHTML = '';
-    noteFilterSelectedTags.forEach(tag => {
-        const tagEl = document.createElement('div');
-        tagEl.className = 'tag-item';
-        tagEl.innerHTML = `
-            <span>${tag}</span>
-            <span class="tag-remove" onclick="removeNoteFilterTag('${tag}')">&times;</span>
-        `;
-        container.appendChild(tagEl);
-    });
-}
-
-function removeNoteFilterTag(tag) {
-    noteFilterSelectedTags = noteFilterSelectedTags.filter(t => t !== tag);
-    renderNoteFilterTags();
-    filterNotes();
-}
-
-function addNoteFilterTag(tag) {
-    if (!noteFilterSelectedTags.includes(tag)) {
-        noteFilterSelectedTags.push(tag);
-        renderNoteFilterTags();
-        filterNotes();
-    }
-    const filterInput = document.getElementById('notes-filter-tag-input');
-    if (filterInput) {
-        filterInput.value = '';
-    }
-    const filterSuggestions = document.getElementById('notes-filter-tag-suggestions');
-    if (filterSuggestions) {
-        filterSuggestions.classList.remove('active');
-    }
-}
-
-// Setup note filter tag input (event listener will be attached on page load)
-document.addEventListener('DOMContentLoaded', () => {
-    const filterInput = document.getElementById('notes-filter-tag-input');
-    const filterSuggestions = document.getElementById('notes-filter-tag-suggestions');
-
-    if (filterInput) {
-        filterInput.addEventListener('input', (e) => {
-            const value = e.target.value.trim().toLowerCase();
-
-            if (!value) {
-                filterSuggestions.classList.remove('active');
-                return;
-            }
-
-            const suggestions = allNoteTags.filter(tag =>
-                tag.toLowerCase().includes(value) &&
-                !noteFilterSelectedTags.includes(tag)
-            );
-
-            if (suggestions.length === 0) {
-                filterSuggestions.classList.remove('active');
-                return;
-            }
-
-            filterSuggestions.innerHTML = suggestions.map(tag =>
-                `<div class="tag-suggestion-item" onclick="addNoteFilterTag('${tag}')">${tag}</div>`
-            ).join('');
-            filterSuggestions.classList.add('active');
-        });
-
-        filterInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                const tag = e.target.value.trim();
-                if (tag) {
-                    addNoteFilterTag(tag);
-                }
-            }
-        });
-    }
-});
 
 // Note tag input functions
 function handleNoteTagInput(event) {
