@@ -5,8 +5,20 @@ import sqlite3
 import os
 import json
 
+import sys
+
 app = Flask(__name__)
-DATABASE = 'tracking.db'
+
+def get_db_path():
+    if getattr(sys, 'frozen', False):
+        # Jika dijalankan sebagai bundle PyInstaller
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        # Jika dijalankan sebagai script python biasa
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, 'tracking.db')
+
+DATABASE = get_db_path()
 
 def get_db():
     conn = sqlite3.connect(DATABASE)
